@@ -13,5 +13,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.removeAllListeners('download-progress');
     ipcRenderer.on('download-progress', (_e, percent) => cb(percent));
   },
-  getPathForFile: (file) => webUtils.getPathForFile(file)
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  window: {
+    minimize: () => ipcRenderer.invoke('window-minimize'),
+    maximizeToggle: () => ipcRenderer.invoke('window-maximize-toggle'),
+    close: () => ipcRenderer.invoke('window-close'),
+    onMaximized: (cb) => {
+      ipcRenderer.removeAllListeners('maximized-state');
+      ipcRenderer.on('maximized-state', (_e, v) => cb(v));
+    }
+  }
 });

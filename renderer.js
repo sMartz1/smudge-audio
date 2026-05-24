@@ -1,21 +1,39 @@
+// ============ ELEMENT REFS ============
+
 const dropZone = document.getElementById('drop-zone');
 const browseBtn = document.getElementById('browse-btn');
-const fileNameEl = document.getElementById('file-name');
-const processBtn = document.getElementById('process-btn');
-const progressWrap = document.getElementById('progress-wrap');
-const progressBar = document.getElementById('progress-bar');
-const statusEl = document.getElementById('status');
+const chipName = document.getElementById('chip-name');
+const chipRemove = document.getElementById('chip-remove');
+
 const urlInput = document.getElementById('url-input');
 const urlBtn = document.getElementById('url-btn');
+const urlProgress = document.getElementById('url-progress');
+
 const presetRow = document.getElementById('preset-row');
+const customBadge = document.getElementById('custom-badge');
+
+const processBtn = document.getElementById('process-btn');
+const ctaProgress = processBtn.querySelector('.cta-progress');
+const ctaLabel = processBtn.querySelector('.cta-label');
+
+const statusPanel = document.getElementById('status-panel');
+const errorPanel = document.getElementById('error-panel');
+const errorText = document.getElementById('error-text');
+const errorDismiss = document.getElementById('error-dismiss');
+
+const winMin = document.getElementById('win-min');
+const winMax = document.getElementById('win-max');
+const winClose = document.getElementById('win-close');
+
+// ============ STATE ============
 
 const SLIDERS = {
-  pitchCents: { el: document.getElementById('pitch'), val: document.getElementById('pitch-value'), fmt: signed },
-  tempoPercent: { el: document.getElementById('tempo'), val: document.getElementById('tempo-value'), fmt: signed },
-  bassDb: { el: document.getElementById('bass'), val: document.getElementById('bass-value'), fmt: signed },
-  trebleDb: { el: document.getElementById('treble'), val: document.getElementById('treble-value'), fmt: signed },
-  reverbMix: { el: document.getElementById('reverb'), val: document.getElementById('reverb-value'), fmt: plain },
-  noiseDb: { el: document.getElementById('noise'), val: document.getElementById('noise-value'), fmt: plain }
+  pitchCents:   { el: document.getElementById('pitch'),  val: document.getElementById('pitch-value'),  bipolar: true,  fmt: (v) => signed(v) + ' cents' },
+  tempoPercent: { el: document.getElementById('tempo'),  val: document.getElementById('tempo-value'),  bipolar: true,  fmt: (v) => signed(v) + ' %' },
+  bassDb:       { el: document.getElementById('bass'),   val: document.getElementById('bass-value'),   bipolar: true,  fmt: (v) => signed(v) + ' dB' },
+  trebleDb:     { el: document.getElementById('treble'), val: document.getElementById('treble-value'), bipolar: true,  fmt: (v) => signed(v) + ' dB' },
+  reverbMix:    { el: document.getElementById('reverb'), val: document.getElementById('reverb-value'), bipolar: false, fmt: (v) => v + ' %' },
+  noiseDb:      { el: document.getElementById('noise'),  val: document.getElementById('noise-value'),  bipolar: false, fmt: (v) => v + ' dB' }
 };
 
 const PRESETS = {
@@ -28,72 +46,144 @@ const PRESETS = {
 let inputPath = null;
 let params = { ...PRESETS.suave };
 
+// ============ HELPERS ============
+
 function signed(n) { return (n > 0 ? '+' : '') + n; }
-function plain(n) { return String(n); }
+
+function updateSliderFill(key) {
+  const s = SLIDERS[key];
+  const min = parseFloat(s.el.min);
+  const max = parseFloat(s.el.max);
+  const v = parseFloat(s.el.value);
+  const thumbPct = ((v - min) / (max - min)) * 100;
+  const centerPct = s.bipolar ? ((0 - min) / (max - min)) * 100 : 0;
+  const start = Math.min(thumbPct, centerPct);
+  const end = Math.max(thumbPct, centerPct);
+  s.el.style.setProperty('--fill-start', start + '%');
+  s.el.style.setProperty('--fill-end', end + '%');
+}
 
 function applyParamsToUI() {
   for (const [key, s] of Object.entries(SLIDERS)) {
     s.el.value = String(params[key]);
     s.val.textContent = s.fmt(params[key]);
+    updateSliderFill(key);
   }
 }
 
 function setActivePreset(name) {
-  for (const btn of presetRow.querySelectorAll('.preset')) {
+  for (const btn of presetRow.querySelectorAll('.seg')) {
     btn.classList.toggle('active', btn.dataset.preset === name);
+  }
+  if (name === null) {
+    presetRow.classList.add('custom');
+    customBadge.classList.remove('hidden');
+  } else {
+    presetRow.classList.remove('custom');
+    customBadge.classList.add('hidden');
   }
 }
 
-function setInput(filePath) {
-  inputPath = filePath;
-  const name = filePath.split(/[\\/]/).pop();
-  fileNameEl.textContent = name;
-  processBtn.disabled = false;
-  statusEl.textContent = '';
-  progressWrap.classList.add('hidden');
-  progressBar.style.width = '0%';
+function setSourceState(state, filePath) {
+  dropZone.classList.remove('idle', 'has-file', 'drag-over');
+  dropZone.classList.add(state);
+  if (state === 'has-file' && filePath) {
+    const name = filePath.split(/[\\/]/).pop();
+    chipName.textContent = name;
+    inputPath = filePath;
+    processBtn.disabled = false;
+  } else {
+    inputPath = null;
+    processBtn.disabled = true;
+  }
 }
 
 function setBusy(busy) {
   browseBtn.disabled = busy;
   urlBtn.disabled = busy;
   urlInput.disabled = busy;
+  chipRemove.disabled = busy;
+  for (const s of Object.values(SLIDERS)) s.el.disabled = busy;
+  for (const seg of presetRow.querySelectorAll('.seg')) seg.disabled = busy;
   processBtn.disabled = busy || !inputPath;
 }
 
-// Preset clicks
-presetRow.addEventListener('click', (e) => {
-  const btn = e.target.closest('.preset');
-  if (!btn) return;
-  const name = btn.dataset.preset;
-  params = { ...PRESETS[name] };
-  applyParamsToUI();
-  setActivePreset(name);
+let statusTimer = null;
+function showStatus(msg, opts = {}) {
+  statusPanel.textContent = msg;
+  statusPanel.classList.toggle('success', !!opts.success);
+  statusPanel.classList.remove('hidden');
+  if (statusTimer) clearTimeout(statusTimer);
+  if (opts.autohide) {
+    statusTimer = setTimeout(() => statusPanel.classList.add('hidden'), opts.autohide);
+  }
+}
+
+function hideStatus() {
+  statusPanel.classList.add('hidden');
+  if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+}
+
+let errorTimer = null;
+function showError(msg) {
+  errorText.textContent = msg;
+  errorPanel.classList.remove('hidden');
+  if (errorTimer) clearTimeout(errorTimer);
+  errorTimer = setTimeout(() => errorPanel.classList.add('hidden'), 8000);
+}
+
+function hideError() {
+  errorPanel.classList.add('hidden');
+  if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
+}
+
+// ============ WIRE UP ============
+
+// Window controls
+winMin.addEventListener('click', () => window.api.window.minimize());
+winMax.addEventListener('click', () => window.api.window.maximizeToggle());
+winClose.addEventListener('click', () => window.api.window.close());
+window.api.window.onMaximized((isMax) => {
+  winMax.setAttribute('aria-label', isMax ? 'Restaurar' : 'Maximizar');
 });
 
-// Slider input -> update params + mark "custom"
+// Preset clicks
+presetRow.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg');
+  if (!btn) return;
+  params = { ...PRESETS[btn.dataset.preset] };
+  applyParamsToUI();
+  setActivePreset(btn.dataset.preset);
+});
+
+// Slider input
 for (const [key, s] of Object.entries(SLIDERS)) {
   s.el.addEventListener('input', () => {
     const v = parseInt(s.el.value, 10);
     params[key] = v;
     s.val.textContent = s.fmt(v);
+    updateSliderFill(key);
     setActivePreset(null);
   });
 }
 
-// Initial UI sync
+// Initial sync
 applyParamsToUI();
+setActivePreset('suave');
 
+// Browse
 browseBtn.addEventListener('click', async () => {
+  hideError();
   const p = await window.api.selectInput();
-  if (p) setInput(p);
+  if (p) setSourceState('has-file', p);
 });
 
+// Drag-drop
 ['dragenter', 'dragover'].forEach((ev) =>
   dropZone.addEventListener(ev, (e) => {
     e.preventDefault();
     e.stopPropagation();
-    dropZone.classList.add('drag-over');
+    if (dropZone.classList.contains('idle')) dropZone.classList.add('drag-over');
   })
 );
 ['dragleave', 'drop'].forEach((ev) =>
@@ -103,46 +193,46 @@ browseBtn.addEventListener('click', async () => {
     dropZone.classList.remove('drag-over');
   })
 );
-
 dropZone.addEventListener('drop', (e) => {
   const file = e.dataTransfer.files[0];
   if (!file) return;
   try {
     const p = window.api.getPathForFile(file);
-    if (p) setInput(p);
+    if (p) {
+      hideError();
+      setSourceState('has-file', p);
+    }
   } catch (err) {
-    statusEl.textContent = 'No se pudo leer la ruta del archivo arrastrado.';
+    showError('No se pudo leer la ruta del archivo arrastrado.');
   }
 });
 
-window.api.onProgress((percent) => {
-  progressWrap.classList.remove('hidden');
-  progressBar.style.width = `${percent}%`;
+// Chip remove
+chipRemove.addEventListener('click', () => {
+  setSourceState('idle');
+  hideStatus();
 });
 
-window.api.onDownloadProgress((percent) => {
-  progressWrap.classList.remove('hidden');
-  progressBar.style.width = `${percent}%`;
-});
-
+// URL load
 urlBtn.addEventListener('click', async () => {
   const url = urlInput.value.trim();
   if (!url) return;
 
+  hideError();
   setBusy(true);
-  statusEl.textContent = 'Descargando de YouTube...';
-  progressWrap.classList.remove('hidden');
-  progressBar.style.width = '0%';
+  showStatus('Descargando de YouTube...');
+  urlProgress.style.width = '0%';
 
   const res = await window.api.downloadUrl(url);
 
   setBusy(false);
+  urlProgress.style.width = '0%';
   if (res.ok) {
-    setInput(res.filePath);
-    statusEl.textContent = 'Audio descargado. Elige preset y procesa.';
+    setSourceState('has-file', res.filePath);
+    showStatus('Audio descargado. Elige preset y procesa.', { autohide: 3500 });
   } else {
-    statusEl.textContent = `Error: ${res.error}`;
-    progressWrap.classList.add('hidden');
+    hideStatus();
+    showError(res.error);
   }
 });
 
@@ -150,6 +240,16 @@ urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') urlBtn.click();
 });
 
+// Progress events
+window.api.onDownloadProgress((percent) => {
+  urlProgress.style.width = `${percent}%`;
+});
+
+window.api.onProgress((percent) => {
+  ctaProgress.style.width = `${percent}%`;
+});
+
+// Process
 processBtn.addEventListener('click', async () => {
   if (!inputPath) return;
 
@@ -157,24 +257,30 @@ processBtn.addEventListener('click', async () => {
   const slashIdx = Math.max(inputPath.lastIndexOf('\\'), inputPath.lastIndexOf('/'));
   const base = inputPath.slice(slashIdx + 1, dotIdx);
   const ext = inputPath.slice(dotIdx);
-  const defaultName = `${base}_proc${ext}`;
+  const defaultName = `${base}_smudged${ext}`;
 
   const outputPath = await window.api.selectOutput(defaultName);
   if (!outputPath) return;
 
+  hideError();
   setBusy(true);
-  statusEl.textContent = 'Procesando...';
-  progressWrap.classList.remove('hidden');
-  progressBar.style.width = '0%';
+  showStatus('Procesando...');
+  ctaProgress.style.width = '0%';
+  ctaLabel.textContent = 'PROCESANDO...';
 
   const res = await window.api.processAudio({ inputPath, outputPath, params });
 
   setBusy(false);
+  ctaLabel.textContent = 'PROCESAR Y EXPORTAR';
+  ctaProgress.style.width = '0%';
 
   if (res.ok) {
-    progressBar.style.width = '100%';
-    statusEl.textContent = `Listo: ${outputPath}`;
+    showStatus(`Listo: ${outputPath}`, { success: true, autohide: 6000 });
   } else {
-    statusEl.textContent = `Error: ${res.error}`;
+    hideStatus();
+    showError(res.error);
   }
 });
+
+// Error dismiss
+errorDismiss.addEventListener('click', hideError);

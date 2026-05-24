@@ -2,67 +2,126 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'" />
   <title>Smudge</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <header class="titlebar">
+    <div class="titlebar-brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span class="brand-word">SMUDGE</span>
+    </div>
+    <div class="titlebar-controls">
+      <button id="win-min" class="winctl" type="button" aria-label="Minimizar">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button id="win-max" class="winctl" type="button" aria-label="Maximizar">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button id="win-close" class="winctl winctl-close" type="button" aria-label="Cerrar">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </div>
+  </header>
+
   <main>
-    <h1>Smudge</h1>
+    <section class="zone" data-zone="source">
+      <h2 class="zone-label">SOURCE</h2>
 
-    <div id="drop-zone" class="drop-zone">
-      <p id="drop-text">Arrastra un audio aqui o</p>
-      <button id="browse-btn" type="button">Seleccionar archivo</button>
-    </div>
-
-    <div class="separator"><span>o desde YouTube</span></div>
-
-    <div class="url-row">
-      <input id="url-input" type="text" placeholder="https://www.youtube.com/watch?v=..." />
-      <button id="url-btn" type="button">Cargar</button>
-    </div>
-
-    <p id="file-name" class="file-name"></p>
-
-    <div class="preset-row" id="preset-row">
-      <button type="button" class="preset" data-preset="off">Off</button>
-      <button type="button" class="preset active" data-preset="suave">Suave</button>
-      <button type="button" class="preset" data-preset="medio">Medio</button>
-      <button type="button" class="preset" data-preset="agresivo">Agresivo</button>
-    </div>
-
-    <details class="advanced">
-      <summary>Avanzado</summary>
-      <div class="advanced-grid">
-        <label>Pitch <span id="pitch-value">+30</span> cents
-          <input id="pitch" type="range" min="-300" max="300" step="10" value="30" />
-        </label>
-        <label>Tempo <span id="tempo-value">+2</span> %
-          <input id="tempo" type="range" min="-10" max="10" step="1" value="2" />
-        </label>
-        <label>Bass <span id="bass-value">-1</span> dB
-          <input id="bass" type="range" min="-6" max="6" step="1" value="-1" />
-        </label>
-        <label>Treble <span id="treble-value">+1</span> dB
-          <input id="treble" type="range" min="-6" max="6" step="1" value="1" />
-        </label>
-        <label>Reverb <span id="reverb-value">5</span> %
-          <input id="reverb" type="range" min="0" max="30" step="1" value="5" />
-        </label>
-        <label>Pink noise <span id="noise-value">-30</span> dB
-          <input id="noise" type="range" min="-50" max="-5" step="1" value="-30" />
-        </label>
+      <div id="drop-zone" class="drop-zone idle">
+        <div class="drop-idle">
+          <svg class="drop-icon" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+            <path d="M2 11 Q4 7 6 11 T10 11 T14 11 T18 11 T22 11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <p class="drop-text">Arrastra un audio o <button id="browse-btn" type="button" class="link-btn">selecciona archivo</button></p>
+          <p class="drop-hint">mp3 · wav · flac · m4a · ogg · aac</p>
+        </div>
+        <div class="drop-chip">
+          <span class="chip-dot" aria-hidden="true"></span>
+          <span class="chip-name" id="chip-name"></span>
+          <button id="chip-remove" type="button" class="chip-remove" aria-label="Quitar archivo">
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+        </div>
       </div>
-    </details>
 
-    <button id="process-btn" type="button" disabled>Procesar y guardar</button>
+      <div class="url-row">
+        <div class="url-input-wrap">
+          <input id="url-input" type="text" placeholder="URL de YouTube" autocomplete="off" />
+          <div id="url-progress" class="url-progress" aria-hidden="true"></div>
+        </div>
+        <button id="url-btn" type="button" class="btn-secondary">CARGAR</button>
+      </div>
+    </section>
 
-    <div id="progress-wrap" class="progress-wrap hidden">
-      <div id="progress-bar" class="progress-bar"></div>
-    </div>
+    <section class="zone" data-zone="camouflage">
+      <h2 class="zone-label">
+        CAMOUFLAGE
+        <span id="custom-badge" class="custom-badge hidden">CUSTOM</span>
+      </h2>
 
-    <p id="status" class="status"></p>
+      <div id="preset-row" class="segmented">
+        <button type="button" class="seg" data-preset="off">OFF</button>
+        <button type="button" class="seg active" data-preset="suave">SUAVE</button>
+        <button type="button" class="seg" data-preset="medio">MEDIO</button>
+        <button type="button" class="seg" data-preset="agresivo">AGRESIVO</button>
+      </div>
+
+      <details class="advanced">
+        <summary>AVANZADO</summary>
+        <div class="advanced-grid">
+          <label class="slider-row" data-bipolar="true">
+            <span class="slider-label">PITCH</span>
+            <span class="slider-value" id="pitch-value">+30 cents</span>
+            <input id="pitch" type="range" min="-300" max="300" step="10" value="30" />
+          </label>
+          <label class="slider-row" data-bipolar="true">
+            <span class="slider-label">TEMPO</span>
+            <span class="slider-value" id="tempo-value">+2 %</span>
+            <input id="tempo" type="range" min="-10" max="10" step="1" value="2" />
+          </label>
+          <label class="slider-row" data-bipolar="true">
+            <span class="slider-label">BASS</span>
+            <span class="slider-value" id="bass-value">-1 dB</span>
+            <input id="bass" type="range" min="-6" max="6" step="1" value="-1" />
+          </label>
+          <label class="slider-row" data-bipolar="true">
+            <span class="slider-label">TREBLE</span>
+            <span class="slider-value" id="treble-value">+1 dB</span>
+            <input id="treble" type="range" min="-6" max="6" step="1" value="1" />
+          </label>
+          <label class="slider-row">
+            <span class="slider-label">REVERB</span>
+            <span class="slider-value" id="reverb-value">5 %</span>
+            <input id="reverb" type="range" min="0" max="30" step="1" value="5" />
+          </label>
+          <label class="slider-row">
+            <span class="slider-label">PINK NOISE</span>
+            <span class="slider-value" id="noise-value">-30 dB</span>
+            <input id="noise" type="range" min="-50" max="-5" step="1" value="-30" />
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <section class="zone" data-zone="output">
+      <button id="process-btn" class="cta" type="button" disabled>
+        <span class="cta-label">PROCESAR Y EXPORTAR</span>
+        <span class="cta-progress" aria-hidden="true"></span>
+      </button>
+
+      <div id="status-panel" class="status-panel hidden" role="status" aria-live="polite"></div>
+      <div id="error-panel" class="error-panel hidden" role="alert">
+        <span class="error-icon" aria-hidden="true">!</span>
+        <span class="error-text" id="error-text"></span>
+        <button id="error-dismiss" type="button" class="error-dismiss" aria-label="Descartar">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1"/></svg>
+        </button>
+      </div>
+    </section>
   </main>
+
   <script src="renderer.js"></script>
 </body>
 </html>

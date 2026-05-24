@@ -16,9 +16,14 @@ function cleanupTempDirs() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 520,
-    height: 720,
+    width: 540,
+    height: 780,
+    minWidth: 480,
+    minHeight: 600,
     resizable: true,
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#0E0F11',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -27,6 +32,12 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile('index.html');
+
+  const emitMaximized = () => {
+    mainWindow.webContents.send('maximized-state', mainWindow.isMaximized());
+  };
+  mainWindow.on('maximize', emitMaximized);
+  mainWindow.on('unmaximize', emitMaximized);
 }
 
 app.whenReady().then(createWindow);
@@ -37,6 +48,20 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', cleanupTempDirs);
+
+ipcMain.handle('window-minimize', (e) => {
+  BrowserWindow.fromWebContents(e.sender)?.minimize();
+});
+
+ipcMain.handle('window-maximize-toggle', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  if (win.isMaximized()) win.unmaximize(); else win.maximize();
+});
+
+ipcMain.handle('window-close', (e) => {
+  BrowserWindow.fromWebContents(e.sender)?.close();
+});
 
 ipcMain.handle('select-input', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
