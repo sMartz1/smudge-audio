@@ -27,10 +27,6 @@ const winClose = document.getElementById('win-close');
 
 const sunoScrubToggle = document.getElementById('suno-scrub');
 
-const stepsEl = document.getElementById('steps');
-const stepEls = Array.from(stepsEl.querySelectorAll('.step'));
-const STEP_COUNT = stepEls.length;
-
 const batchBtn = document.getElementById('batch-btn');
 const variationRow = document.getElementById('variation-row');
 const variationCounter = document.getElementById('variation-counter');
@@ -390,34 +386,6 @@ function flashZone(zoneName) {
   setTimeout(() => label.classList.remove('flash'), 950);
 }
 
-function updateSteps(percent) {
-  const slice = 100 / STEP_COUNT;
-  for (let i = 0; i < STEP_COUNT; i++) {
-    const start = i * slice;
-    const end = (i + 1) * slice;
-    let fill;
-    if (percent >= end) fill = 100;
-    else if (percent <= start) fill = 0;
-    else fill = ((percent - start) / slice) * 100;
-    const el = stepEls[i];
-    el.querySelector('.step-fill').style.width = fill + '%';
-    el.classList.toggle('done', percent >= end);
-    el.classList.toggle('active', percent > start && percent < end);
-  }
-}
-
-function resetSteps() {
-  for (const el of stepEls) {
-    el.querySelector('.step-fill').style.width = '0%';
-    el.classList.remove('active', 'done');
-  }
-}
-
-function showSteps(show) {
-  stepsEl.classList.toggle('hidden', !show);
-  if (show) resetSteps();
-}
-
 // ============ WIRE UP ============
 
 // Window controls
@@ -531,18 +499,36 @@ window.api.onDownloadProgress((percent) => {
 window.api.onProgress((percent) => {
   ctaProgress.classList.remove('indeterminate');
   ctaProgress.style.width = `${percent}%`;
-  updateSteps(percent);
+  audioStage.classList.remove('frozen');
   setStageProgress(percent);
 });
 
-window.api.onBatchProgress(({ variationIdx, overallPercent, total, completed }) => {
-  updateSteps(overallPercent);
+window.api.onBatchProgress(({ variationIdx, variationPercent, overallPercent, total, completed }) => {
   ctaProgress.classList.remove('indeterminate');
+  // CTA progress reflects overall batch position (so the button is a long-haul
+  // indicator). The audio stage shows per-song progress, which resets each var.
   ctaProgress.style.width = `${overallPercent}%`;
   variationCounter.textContent = `VAR ${variationIdx + 1} / ${total}`;
   setStageState('batch', `VAR ${variationIdx + 1}/${total}`);
-  setStageProgress(overallPercent);
-  if (!completed) updateVariationDots(variationIdx);
+
+  if (completed) {
+    // Variation just finished — freeze bars, fill the per-song bar to 100%,
+    // light up its dot. Bars stay frozen until the next variation emits its
+    // first non-completed progress event.
+    setStageProgress(100);
+    audioStage.classList.add('frozen');
+    const dot = vdEls[variationIdx];
+    if (dot && !dot.classList.contains('done')) {
+      dot.classList.remove('active');
+      dot.classList.add('done', 'just-done');
+      setTimeout(() => dot.classList.remove('just-done'), 420);
+    }
+  } else {
+    // Variation in progress — unfreeze + per-song progress
+    audioStage.classList.remove('frozen');
+    setStageProgress(variationPercent);
+    updateVariationDots(variationIdx);
+  }
 });
 
 // Process
@@ -564,9 +550,9 @@ processBtn.addEventListener('click', async () => {
   processBtn.classList.add('processing');
   ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'PROCESANDO...';
-  showSteps(true);
   flashZone('output');
   setStageState('processing');
+  audioStage.classList.remove('frozen');
 
   const fullParams = {
     ...params,
@@ -582,17 +568,16 @@ processBtn.addEventListener('click', async () => {
   ctaProgress.style.width = '0%';
 
   if (res.ok) {
-    updateSteps(100);
+    setStageProgress(100);
     setStageState('complete', 'DONE');
     pulseStageBurst();
-    setTimeout(() => {
-      showSteps(false);
-      setStageState('ready');
-    }, 1800);
+    // After the burst, freeze the bars on their final shape — the final state
+    // sticks around as a "captured" snapshot until a new file is loaded.
+    setTimeout(() => audioStage.classList.add('frozen'), 700);
     showStatus(`Listo: ${outputPath}`, { success: true, autohide: 6000 });
   } else {
-    showSteps(false);
     setStageState('ready');
+    audioStage.classList.remove('frozen');
     hideStatus();
     showError(res.error);
   }
@@ -622,10 +607,10 @@ batchBtn.addEventListener('click', async () => {
   processBtn.classList.add('processing');
   ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'BATCH EN CURSO...';
-  showSteps(true);
   showVariationRow(true);
   flashZone('output');
   setStageState('batch', `VAR 1/${VARIATION_COUNT}`);
+  audioStage.classList.remove('frozen');
 
   const res = await window.api.processBatch({
     inputPath, outputDir, baseName, ext, variations
@@ -638,20 +623,16 @@ batchBtn.addEventListener('click', async () => {
   ctaProgress.style.width = '0%';
 
   if (res.ok) {
-    updateSteps(100);
+    setStageProgress(100);
     markAllVariationsDone();
     setStageState('complete', 'DONE');
     pulseStageBurst();
+    setTimeout(() => audioStage.classList.add('frozen'), 700);
     showStatus(`Listo: ${VARIATION_COUNT} variaciones en ${res.outputDir}`, { success: true, autohide: 8000 });
-    setTimeout(() => {
-      showSteps(false);
-      showVariationRow(false);
-      setStageState('ready');
-    }, 3500);
   } else {
-    showSteps(false);
     showVariationRow(false);
     setStageState('ready');
+    audioStage.classList.remove('frozen');
     hideStatus();
     showError(res.error);
   }
