@@ -663,6 +663,59 @@ input[type="range"]:focus::-webkit-slider-thumb {
   animation: slide-indeterminate 1.2s ease-in-out infinite;
 }
 
+/* ============ STEPS BAR ============ */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.step-label {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  text-transform: uppercase;
+  text-align: center;
+  transition: color 0.18s;
+}
+
+.step-track {
+  height: 3px;
+  background: var(--surface-2);
+  border-radius: 1.5px;
+  overflow: hidden;
+  position: relative;
+}
+
+.step-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 1.5px;
+  transition: width 0.18s linear;
+}
+
+.step.active .step-label {
+  color: var(--accent);
+}
+
+.step.done .step-label {
+  color: var(--text-2);
+}
+
+.step.active .step-track {
+  box-shadow: 0 0 6px rgba(232,163,61,0.4);
+}
+
 .cta.processing::after {
   content: '';
   position: absolute;

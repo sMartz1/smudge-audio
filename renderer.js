@@ -27,6 +27,10 @@ const winClose = document.getElementById('win-close');
 
 const sunoScrubToggle = document.getElementById('suno-scrub');
 
+const stepsEl = document.getElementById('steps');
+const stepEls = Array.from(stepsEl.querySelectorAll('.step'));
+const STEP_COUNT = stepEls.length;
+
 // ============ STATE ============
 
 const SLIDERS = {
@@ -182,6 +186,34 @@ function hideError() {
   if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
 }
 
+function updateSteps(percent) {
+  const slice = 100 / STEP_COUNT;
+  for (let i = 0; i < STEP_COUNT; i++) {
+    const start = i * slice;
+    const end = (i + 1) * slice;
+    let fill;
+    if (percent >= end) fill = 100;
+    else if (percent <= start) fill = 0;
+    else fill = ((percent - start) / slice) * 100;
+    const el = stepEls[i];
+    el.querySelector('.step-fill').style.width = fill + '%';
+    el.classList.toggle('done', percent >= end);
+    el.classList.toggle('active', percent > start && percent < end);
+  }
+}
+
+function resetSteps() {
+  for (const el of stepEls) {
+    el.querySelector('.step-fill').style.width = '0%';
+    el.classList.remove('active', 'done');
+  }
+}
+
+function showSteps(show) {
+  stepsEl.classList.toggle('hidden', !show);
+  if (show) resetSteps();
+}
+
 // ============ WIRE UP ============
 
 // Window controls
@@ -294,6 +326,7 @@ window.api.onDownloadProgress((percent) => {
 window.api.onProgress((percent) => {
   ctaProgress.classList.remove('indeterminate');
   ctaProgress.style.width = `${percent}%`;
+  updateSteps(percent);
 });
 
 // Process
@@ -315,6 +348,7 @@ processBtn.addEventListener('click', async () => {
   processBtn.classList.add('processing');
   ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'PROCESANDO...';
+  showSteps(true);
 
   const fullParams = {
     ...params,
@@ -330,8 +364,11 @@ processBtn.addEventListener('click', async () => {
   ctaProgress.style.width = '0%';
 
   if (res.ok) {
+    updateSteps(100);
+    setTimeout(() => showSteps(false), 1200);
     showStatus(`Listo: ${outputPath}`, { success: true, autohide: 6000 });
   } else {
+    showSteps(false);
     hideStatus();
     showError(res.error);
   }

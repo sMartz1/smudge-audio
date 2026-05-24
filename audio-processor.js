@@ -149,8 +149,11 @@ function buildFilter(params, duration) {
   }
 
   if (useReverb) {
-    const outGain = ((p.reverbMix / 100) * 0.6).toFixed(3);
-    linear.push(`aecho=0.8:${outGain}:60:0.4`);
+    // aecho out_gain is a MASTER fader on the whole output (dry + echoes), not
+    // a wet-mix amount. Keeping it ~1.0 prevents the entire signal from being
+    // attenuated. Reverb amount is expressed via the echo decay instead.
+    const decay = (0.1 + (p.reverbMix / 100) * 0.4).toFixed(3); // 0.1 .. 0.5
+    linear.push(`aecho=in_gain=1.0:out_gain=0.9:delays=60:decays=${decay}`);
   }
 
   if (linear.length > 0) {
