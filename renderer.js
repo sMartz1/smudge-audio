@@ -146,9 +146,11 @@ function setSourceState(state, filePath) {
     chipName.textContent = name;
     inputPath = filePath;
     processBtn.disabled = false;
+    batchBtn.disabled = false;
   } else {
     inputPath = null;
     processBtn.disabled = true;
+    batchBtn.disabled = true;
   }
 }
 
