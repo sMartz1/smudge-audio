@@ -138,15 +138,16 @@ function setActivePreset(name) {
   }
 }
 
-function setSourceState(state, filePath) {
+function setSourceState(state, filePath, displayName) {
   dropZone.classList.remove('idle', 'has-file', 'drag-over');
   dropZone.classList.add(state);
   if (state === 'has-file' && filePath) {
-    const name = filePath.split(/[\\/]/).pop();
+    const name = displayName || filePath.split(/[\\/]/).pop();
     chipName.textContent = name;
     inputPath = filePath;
     processBtn.disabled = false;
     batchBtn.disabled = false;
+    flashZone('source');
   } else {
     inputPath = null;
     processBtn.disabled = true;
@@ -229,17 +230,30 @@ function markAllVariationsDone() {
     const el = vdEls[i];
     el.classList.remove('active');
     el.classList.add('done');
-    // Left-to-right wave celebration
+    // Left-to-right firework chain
     setTimeout(() => {
-      el.classList.add('wave');
-      setTimeout(() => el.classList.remove('wave'), 620);
-    }, i * 60);
+      el.classList.add('firework');
+      setTimeout(() => el.classList.remove('firework'), 1100);
+    }, i * 70);
   }
 }
 
 function showVariationRow(show) {
   variationRow.classList.toggle('hidden', !show);
-  if (show) resetVariationDots();
+  if (show) {
+    resetVariationDots();
+    // Staggered scanning-light entrance across all 10 dots
+    vdEls.forEach((el, i) => {
+      el.classList.remove('enter');
+      void el.offsetWidth;
+      el.style.animationDelay = (i * 45) + 'ms';
+      el.classList.add('enter');
+      setTimeout(() => {
+        el.classList.remove('enter');
+        el.style.animationDelay = '';
+      }, 550 + i * 45);
+    });
+  }
 }
 
 let statusTimer = null;
@@ -269,6 +283,18 @@ function showError(msg) {
 function hideError() {
   errorPanel.classList.add('hidden');
   if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
+}
+
+function flashZone(zoneName) {
+  const zone = document.querySelector(`.zone[data-zone="${zoneName}"]`);
+  if (!zone) return;
+  const label = zone.querySelector('.zone-label');
+  if (!label) return;
+  label.classList.remove('flash');
+  // Force reflow so the animation restarts even on rapid re-triggers.
+  void label.offsetWidth;
+  label.classList.add('flash');
+  setTimeout(() => label.classList.remove('flash'), 950);
 }
 
 function updateSteps(percent) {
@@ -315,6 +341,7 @@ presetRow.addEventListener('click', (e) => {
   if (!btn) return;
   animateToPreset(btn.dataset.preset);
   setActivePreset(btn.dataset.preset);
+  flashZone('camouflage');
 });
 
 // Slider input
@@ -390,7 +417,7 @@ urlBtn.addEventListener('click', async () => {
   urlProgress.classList.remove('indeterminate');
   urlProgress.style.width = '0%';
   if (res.ok) {
-    setSourceState('has-file', res.filePath);
+    setSourceState('has-file', res.filePath, res.title);
     showStatus('Audio descargado. Elige preset y procesa.', { autohide: 3500 });
   } else {
     hideStatus();
@@ -442,6 +469,7 @@ processBtn.addEventListener('click', async () => {
   ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'PROCESANDO...';
   showSteps(true);
+  flashZone('output');
 
   const fullParams = {
     ...params,
@@ -493,6 +521,7 @@ batchBtn.addEventListener('click', async () => {
   ctaLabel.textContent = 'BATCH EN CURSO...';
   showSteps(true);
   showVariationRow(true);
+  flashZone('output');
 
   const res = await window.api.processBatch({
     inputPath, outputDir, baseName, ext, variations

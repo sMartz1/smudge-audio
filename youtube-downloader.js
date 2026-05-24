@@ -51,13 +51,15 @@ function downloadAudio(url, onProgress) {
       '-f', 'bestaudio',
       '-o', outputTemplate,
       '--ffmpeg-location', ffmpegBin,
-      '--print', 'after_move:%(filepath)s',
+      '--print', 'after_move:FILE::%(filepath)s',
+      '--print', 'after_move:TITLE::%(title)s',
       '--newline'
     ];
 
     const child = spawn(ytdlpBin, args, { windowsHide: true });
 
     let finalPath = '';
+    let title = '';
     let stderr = '';
 
     function handleLines(text) {
@@ -66,8 +68,10 @@ function downloadAudio(url, onProgress) {
         const m = line.match(PROGRESS_RE);
         if (m) {
           onProgress(parseFloat(m[1]));
-        } else if (line.trim() && !line.startsWith('[') && !line.startsWith('WARNING') && !line.startsWith('ERROR')) {
-          finalPath = line.trim();
+        } else if (line.startsWith('FILE::')) {
+          finalPath = line.slice(6).trim();
+        } else if (line.startsWith('TITLE::')) {
+          title = line.slice(7).trim();
         }
       }
     }
@@ -92,7 +96,7 @@ function downloadAudio(url, onProgress) {
         if (files.length === 0) return reject(new Error('No se descargo ningun archivo.'));
         finalPath = path.join(tempDir, files[0]);
       }
-      resolve({ filePath: finalPath, tempDir });
+      resolve({ filePath: finalPath, tempDir, title: title || null });
     });
   });
 }

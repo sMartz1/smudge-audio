@@ -133,11 +133,11 @@ ipcMain.handle('download-url', async (event, url) => {
     return { ok: false, error: 'URL de YouTube no valida.' };
   }
   try {
-    const { filePath, tempDir } = await downloadAudio(url, (percent) => {
+    const { filePath, tempDir, title } = await downloadAudio(url, (percent) => {
       event.sender.send('download-progress', percent);
     });
     tempDirs.add(tempDir);
-    return { ok: true, filePath };
+    return { ok: true, filePath, title };
   } catch (err) {
     return { ok: false, error: err.message };
   }
