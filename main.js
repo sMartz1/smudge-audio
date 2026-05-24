@@ -126,6 +126,13 @@ ipcMain.handle('process-batch', async (event, { inputPath, outputDir, baseName, 
         });
       };
 
+      // Synthetic start-of-variation event. FFmpeg can take a few seconds
+      // before emitting its first progress (especially with multi-pass +
+      // chunked jitter graphs), and during that window the renderer's bars
+      // would otherwise stay frozen from the previous variation's completion.
+      // Emitting 0% here forces an immediate visual reset.
+      emit(0);
+
       if (doubled) {
         // Pass 1 to tmp, pass 2 from tmp to final. Map progress 0-50 / 50-100.
         const tmpFile = path.join(passTmpDir, `pass1_v${i}${ext}`);
