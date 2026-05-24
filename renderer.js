@@ -25,6 +25,8 @@ const winMin = document.getElementById('win-min');
 const winMax = document.getElementById('win-max');
 const winClose = document.getElementById('win-close');
 
+const sunoScrubToggle = document.getElementById('suno-scrub');
+
 // ============ STATE ============
 
 const SLIDERS = {
@@ -299,7 +301,8 @@ processBtn.addEventListener('click', async () => {
   ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'PROCESANDO...';
 
-  const res = await window.api.processAudio({ inputPath, outputPath, params });
+  const fullParams = { ...params, sunoScrub: sunoScrubToggle.checked };
+  const res = await window.api.processAudio({ inputPath, outputPath, params: fullParams });
 
   setBusy(false);
   processBtn.classList.remove('processing');
