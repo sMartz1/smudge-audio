@@ -172,14 +172,16 @@ function setBusy(busy) {
 const VAR_START = {
   pitchCents: 0, tempoPercent: 0, bassDb: 0, trebleDb: 0,
   reverbMix: 0, noiseDb: -50,
-  timingJitter: 0, tapeSim: 0, cabinetMix: 0
+  timingJitter: 0, tapeSim: 0, cabinetMix: 0, codecLaunder: 0
 };
+// v10 now reaches anti-fingerprint territory: 3-semitone pitch shift, +12%
+// tempo, max-intensity chunked jitter, full lo-fi codec laundering (8kHz lowpass
+// + 12-bit acrusher). Audible alteration but designed to defeat detectors.
 const VAR_END = {
-  pitchCents: 150, tempoPercent: 7, bassDb: -3, trebleDb: 3,
-  reverbMix: 15, noiseDb: -20,
-  timingJitter: 0.7, tapeSim: 0.8, cabinetMix: 20
+  pitchCents: 300, tempoPercent: 12, bassDb: -4, trebleDb: 4,
+  reverbMix: 25, noiseDb: -15,
+  timingJitter: 1.0, tapeSim: 1.0, cabinetMix: 35, codecLaunder: 1.0
 };
-// Continuous-valued params keep float precision; integer-domain params get rounded.
 const INT_PARAMS = new Set(['pitchCents', 'tempoPercent', 'bassDb', 'trebleDb', 'reverbMix', 'noiseDb']);
 
 function lerpParams(t) {
@@ -195,7 +197,13 @@ function buildVariations(count) {
   const out = [];
   for (let i = 0; i < count; i++) {
     const t = count === 1 ? 0 : i / (count - 1);
-    out.push({ ...lerpParams(t), sunoScrub: sunoScrubToggle.checked });
+    // Force sunoScrub on for any non-passthrough variation. The 7-band notch
+    // chain is silent on non-Suno content (those bands carry no real signal)
+    // and is the cheapest layer for defeating Suno-trained detectors.
+    out.push({
+      ...lerpParams(t),
+      sunoScrub: t > 0
+    });
   }
   return out;
 }

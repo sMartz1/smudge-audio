@@ -15,10 +15,10 @@ const NEUTRAL = {
   reverbMix: 0,
   noiseDb: -50,
   sunoScrub: false,
-  // V2 additions:
-  timingJitter: 0,   // 0..1 intensity (chunked atempo jitter)
-  tapeSim: 0,        // 0..1 intensity (wow + soft compression)
-  cabinetMix: 0      // 0..100 wet % (afir convolution with cabinet IR)
+  timingJitter: 0,    // 0..1 intensity (chunked atempo jitter)
+  tapeSim: 0,         // 0..1 intensity (wow + soft compression)
+  cabinetMix: 0,      // 0..100 wet % (EQ-based speaker shape)
+  codecLaunder: 0     // 0..1 lo-fi degradation (lowpass + bit reduction)
 };
 
 // Documented Suno watermark bands.
@@ -92,10 +92,11 @@ function buildFilter(params, duration) {
   const useJitter = p.timingJitter > 0.01 && duration && duration > 1.5;
   const useTape = p.tapeSim > 0.01;
   const useCabinet = p.cabinetMix > 0.5;
+  const useDegrade = p.codecLaunder > 0.05;
 
   const hasAnyProcessing =
     usePitch || useTempo || useBass || useTreble || useReverb ||
-    useSunoScrub || useJitter || useTape || useCabinet;
+    useSunoScrub || useJitter || useTape || useCabinet || useDegrade;
 
   // Input index allocation: 0 user; pink noise (if used) is the next.
   // Cabinet sim is now EQ-based, no extra input file.
@@ -148,6 +149,16 @@ function buildFilter(params, duration) {
     // attenuated. Reverb amount is expressed via the echo decay instead.
     const decay = (0.1 + (p.reverbMix / 100) * 0.4).toFixed(3); // 0.1 .. 0.5
     linear.push(`aecho=in_gain=1.0:out_gain=0.9:delays=60:decays=${decay}`);
+  }
+
+  // Codec laundering: lo-fi degradation that destroys spectrogram peaks
+  // detectors hash. Lowpass cuts high-frequency fingerprint material; acrusher
+  // adds harmonic distortion that shifts peaks off the original locations.
+  if (useDegrade) {
+    const lpFreq = Math.round(20000 - 12000 * p.codecLaunder);  // 20k -> 8k
+    const bits = (16 - 4 * p.codecLaunder).toFixed(2);          // 16 -> 12 bits
+    linear.push(`lowpass=f=${lpFreq}`);
+    linear.push(`acrusher=bits=${bits}:samples=1:mode=lin:level_in=1:level_out=1`);
   }
 
   if (linear.length > 0) {
