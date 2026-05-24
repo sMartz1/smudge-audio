@@ -3,7 +3,9 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   selectInput: () => ipcRenderer.invoke('select-input'),
   selectOutput: (defaultName) => ipcRenderer.invoke('select-output', defaultName),
+  selectOutputDir: () => ipcRenderer.invoke('select-output-dir'),
   processAudio: (payload) => ipcRenderer.invoke('process-audio', payload),
+  processBatch: (payload) => ipcRenderer.invoke('process-batch', payload),
   downloadUrl: (url) => ipcRenderer.invoke('download-url', url),
   onProgress: (cb) => {
     ipcRenderer.removeAllListeners('progress');
@@ -12,6 +14,10 @@ contextBridge.exposeInMainWorld('api', {
   onDownloadProgress: (cb) => {
     ipcRenderer.removeAllListeners('download-progress');
     ipcRenderer.on('download-progress', (_e, percent) => cb(percent));
+  },
+  onBatchProgress: (cb) => {
+    ipcRenderer.removeAllListeners('batch-progress');
+    ipcRenderer.on('batch-progress', (_e, payload) => cb(payload));
   },
   getPathForFile: (file) => webUtils.getPathForFile(file),
   window: {

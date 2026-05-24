@@ -663,6 +663,134 @@ input[type="range"]:focus::-webkit-slider-thumb {
   animation: slide-indeterminate 1.2s ease-in-out infinite;
 }
 
+/* ============ BATCH CTA + VARIATION DOTS ============ */
+
+.cta-secondary {
+  width: 100%;
+  height: 36px;
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.cta-secondary:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-2);
+}
+
+.cta-secondary:hover .batch-icon {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(232,163,61,0.6);
+}
+
+.cta-secondary:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+
+.cta-secondary:disabled .batch-icon { background: var(--text-3); box-shadow: none; }
+
+.batch-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px rgba(232,163,61,0.5);
+  transition: background 0.18s, box-shadow 0.18s;
+}
+
+.batch-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  font-weight: 400;
+  text-transform: none;
+}
+
+.variation-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.variation-row:not(.hidden) {
+  animation: fade-in-up 0.22s ease-out;
+}
+
+.variation-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.vd {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: transparent;
+  transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+
+.vd.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: vd-pulse 0.9s ease-in-out infinite;
+}
+
+.vd.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 0.85;
+}
+
+.vd.just-done {
+  animation: vd-pop 0.4s ease-out;
+}
+
+.vd.wave {
+  animation: vd-wave 0.6s ease-out;
+}
+
+.variation-counter {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+@keyframes vd-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232,163,61,0); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 4px rgba(232,163,61,0.25); transform: scale(1.18); }
+}
+
+@keyframes vd-pop {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,163,61,0); }
+  35%  { transform: scale(1.45); box-shadow: 0 0 0 6px rgba(232,163,61,0.35); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,163,61,0); }
+}
+
+@keyframes vd-wave {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,163,61,0); }
+  50%  { transform: scale(1.3); box-shadow: 0 0 8px rgba(232,163,61,0.7); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,163,61,0); }
+}
+
 /* ============ STEPS BAR ============ */
 
 .steps {

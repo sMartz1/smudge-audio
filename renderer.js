@@ -31,6 +31,12 @@ const stepsEl = document.getElementById('steps');
 const stepEls = Array.from(stepsEl.querySelectorAll('.step'));
 const STEP_COUNT = stepEls.length;
 
+const batchBtn = document.getElementById('batch-btn');
+const variationRow = document.getElementById('variation-row');
+const variationCounter = document.getElementById('variation-counter');
+const vdEls = Array.from(variationRow.querySelectorAll('.vd'));
+const VARIATION_COUNT = vdEls.length;
+
 // ============ STATE ============
 
 const SLIDERS = {
@@ -155,6 +161,83 @@ function setBusy(busy) {
   for (const s of Object.values(SLIDERS)) s.el.disabled = busy;
   for (const seg of presetRow.querySelectorAll('.seg')) seg.disabled = busy;
   processBtn.disabled = busy || !inputPath;
+  batchBtn.disabled = busy || !inputPath;
+}
+
+// ============ BATCH HELPERS ============
+
+const VAR_START = {
+  pitchCents: 0, tempoPercent: 0, bassDb: 0, trebleDb: 0,
+  reverbMix: 0, noiseDb: -50,
+  timingJitter: 0, tapeSim: 0, cabinetMix: 0
+};
+const VAR_END = {
+  pitchCents: 150, tempoPercent: 7, bassDb: -3, trebleDb: 3,
+  reverbMix: 15, noiseDb: -20,
+  timingJitter: 0.7, tapeSim: 0.8, cabinetMix: 20
+};
+// Continuous-valued params keep float precision; integer-domain params get rounded.
+const INT_PARAMS = new Set(['pitchCents', 'tempoPercent', 'bassDb', 'trebleDb', 'reverbMix', 'noiseDb']);
+
+function lerpParams(t) {
+  const out = {};
+  for (const key of Object.keys(VAR_START)) {
+    const v = VAR_START[key] + (VAR_END[key] - VAR_START[key]) * t;
+    out[key] = INT_PARAMS.has(key) ? Math.round(v) : v;
+  }
+  return out;
+}
+
+function buildVariations(count) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : i / (count - 1);
+    out.push({ ...lerpParams(t), sunoScrub: sunoScrubToggle.checked });
+  }
+  return out;
+}
+
+function resetVariationDots() {
+  for (const el of vdEls) {
+    el.classList.remove('active', 'done', 'just-done', 'wave');
+  }
+}
+
+function updateVariationDots(activeIdx) {
+  for (let i = 0; i < vdEls.length; i++) {
+    const el = vdEls[i];
+    const wasDone = el.classList.contains('done');
+    if (i < activeIdx) {
+      el.classList.remove('active');
+      if (!wasDone) {
+        el.classList.add('done', 'just-done');
+        setTimeout(() => el.classList.remove('just-done'), 420);
+      }
+    } else if (i === activeIdx) {
+      el.classList.remove('done', 'just-done');
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active', 'done', 'just-done');
+    }
+  }
+}
+
+function markAllVariationsDone() {
+  for (let i = 0; i < vdEls.length; i++) {
+    const el = vdEls[i];
+    el.classList.remove('active');
+    el.classList.add('done');
+    // Left-to-right wave celebration
+    setTimeout(() => {
+      el.classList.add('wave');
+      setTimeout(() => el.classList.remove('wave'), 620);
+    }, i * 60);
+  }
+}
+
+function showVariationRow(show) {
+  variationRow.classList.toggle('hidden', !show);
+  if (show) resetVariationDots();
 }
 
 let statusTimer = null;
@@ -329,6 +412,14 @@ window.api.onProgress((percent) => {
   updateSteps(percent);
 });
 
+window.api.onBatchProgress(({ variationIdx, overallPercent, total, completed }) => {
+  updateSteps(overallPercent);
+  ctaProgress.classList.remove('indeterminate');
+  ctaProgress.style.width = `${overallPercent}%`;
+  variationCounter.textContent = `VAR ${variationIdx + 1} / ${total}`;
+  if (!completed) updateVariationDots(variationIdx);
+});
+
 // Process
 processBtn.addEventListener('click', async () => {
   if (!inputPath) return;
@@ -376,3 +467,53 @@ processBtn.addEventListener('click', async () => {
 
 // Error dismiss
 errorDismiss.addEventListener('click', hideError);
+
+// ============ BATCH FLOW ============
+
+batchBtn.addEventListener('click', async () => {
+  if (!inputPath) return;
+
+  const outputDir = await window.api.selectOutputDir();
+  if (!outputDir) return;
+
+  const dotIdx = inputPath.lastIndexOf('.');
+  const slashIdx = Math.max(inputPath.lastIndexOf('\\'), inputPath.lastIndexOf('/'));
+  const baseName = inputPath.slice(slashIdx + 1, dotIdx);
+  const ext = inputPath.slice(dotIdx);
+
+  const variations = buildVariations(VARIATION_COUNT);
+
+  hideError();
+  setBusy(true);
+  showStatus(`Generando ${VARIATION_COUNT} variaciones...`);
+  processBtn.classList.add('processing');
+  ctaProgress.classList.add('indeterminate');
+  ctaLabel.textContent = 'BATCH EN CURSO...';
+  showSteps(true);
+  showVariationRow(true);
+
+  const res = await window.api.processBatch({
+    inputPath, outputDir, baseName, ext, variations
+  });
+
+  setBusy(false);
+  processBtn.classList.remove('processing');
+  ctaProgress.classList.remove('indeterminate');
+  ctaLabel.textContent = 'PROCESAR Y EXPORTAR';
+  ctaProgress.style.width = '0%';
+
+  if (res.ok) {
+    updateSteps(100);
+    markAllVariationsDone();
+    showStatus(`Listo: ${VARIATION_COUNT} variaciones en ${res.outputDir}`, { success: true, autohide: 8000 });
+    setTimeout(() => {
+      showSteps(false);
+      showVariationRow(false);
+    }, 3500);
+  } else {
+    showSteps(false);
+    showVariationRow(false);
+    hideStatus();
+    showError(res.error);
+  }
+});

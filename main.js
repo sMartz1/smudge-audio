@@ -87,6 +87,47 @@ ipcMain.handle('select-output', async (_e, defaultName) => {
   return result.filePath;
 });
 
+ipcMain.handle('select-output-dir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Carpeta destino para las variaciones',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('process-batch', async (event, { inputPath, outputDir, baseName, ext, variations }) => {
+  const total = variations.length;
+  try {
+    for (let i = 0; i < total; i++) {
+      const params = variations[i];
+      const outFile = path.join(
+        outputDir,
+        `${baseName}_v${String(i + 1).padStart(2, '0')}${ext}`
+      );
+      await processAudio(inputPath, outFile, params, (percent) => {
+        const overall = ((i + percent / 100) / total) * 100;
+        event.sender.send('batch-progress', {
+          variationIdx: i,
+          variationPercent: percent,
+          overallPercent: overall,
+          total
+        });
+      });
+      event.sender.send('batch-progress', {
+        variationIdx: i,
+        variationPercent: 100,
+        overallPercent: ((i + 1) / total) * 100,
+        total,
+        completed: true
+      });
+    }
+    return { ok: true, outputDir };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('download-url', async (event, url) => {
   if (!url || !isYoutubeUrl(url)) {
     return { ok: false, error: 'URL de YouTube no valida.' };
