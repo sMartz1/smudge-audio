@@ -1025,6 +1025,222 @@ input[type="range"]:focus::-webkit-slider-thumb {
   50% { opacity: 0.3; }
 }
 
+/* ============ AUDIO STAGE ============ */
+
+.audio-stage {
+  margin-top: 6px;
+  background: linear-gradient(180deg, #14161A 0%, #1B1E22 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px 16px 18px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02), 0 0 36px -16px rgba(232,163,61,0.25);
+}
+
+.audio-stage:not(.hidden) {
+  animation: stage-enter 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes stage-enter {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.985); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.stage-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 3;
+}
+
+.stage-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+
+.stage-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-state {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  border-radius: var(--r-sm);
+}
+
+.audio-stage.processing .stage-state,
+.audio-stage.batch .stage-state {
+  animation: state-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes state-pulse {
+  0%, 100% { background: var(--accent-soft); }
+  50%      { background: rgba(232,163,61,0.35); box-shadow: 0 0 12px rgba(232,163,61,0.4); }
+}
+
+/* Visualization container */
+.stage-viz {
+  position: relative;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Bars row (top) */
+.stage-bars {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  position: relative;
+  z-index: 2;
+}
+
+.stage-bars .bar {
+  flex: 1;
+  min-height: 4%;
+  background: linear-gradient(180deg, var(--accent-2) 0%, var(--accent) 60%, var(--accent-3) 100%);
+  border-radius: 1px;
+  box-shadow: 0 0 4px rgba(232,163,61,0.5);
+  animation: bar-dance var(--dur, 1200ms) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0ms);
+  transform-origin: bottom;
+  transition: filter 0.2s, box-shadow 0.2s;
+}
+
+@keyframes bar-dance {
+  0%   { height: 6%; }
+  100% { height: var(--peak, 70%); }
+}
+
+/* Reflection row (bottom, mirrored, fading) */
+.stage-bars-reflect {
+  align-items: flex-start;
+  opacity: 0.22;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 80%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 80%);
+  height: 36px;
+  flex: 0 0 auto;
+  filter: blur(0.3px);
+}
+
+.stage-bars-reflect .bar {
+  align-self: flex-start;
+  background: linear-gradient(180deg, var(--accent) 0%, transparent 100%);
+  box-shadow: none;
+}
+
+/* Scan beam */
+.stage-scan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 80px;
+  background: linear-gradient(90deg, transparent 0%, rgba(232,163,61,0.18) 50%, transparent 100%);
+  animation: stage-scan 3.6s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+  filter: blur(2px);
+}
+
+@keyframes stage-scan {
+  0%   { transform: translateX(-100px); }
+  100% { transform: translateX(800px); }
+}
+
+/* Glow halo */
+.stage-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(232,163,61,0.12), transparent 70%);
+  animation: stage-glow 3.2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes stage-glow {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+/* Progress fill — sweeps left to right during processing */
+.stage-progress {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(232,163,61,0.10) 0%, rgba(232,163,61,0.04) 100%);
+  width: 0%;
+  transition: width 0.18s linear;
+  pointer-events: none;
+  z-index: 1;
+  border-right: 1px solid rgba(232,163,61,0.4);
+}
+
+/* Processing state: bars dance faster + brighter glow */
+.audio-stage.processing .stage-bars .bar,
+.audio-stage.batch .stage-bars .bar {
+  animation-duration: 380ms;
+  filter: brightness(1.15);
+  box-shadow: 0 0 10px rgba(232,163,61,0.85);
+}
+
+.audio-stage.processing .stage-glow,
+.audio-stage.batch .stage-glow {
+  background: radial-gradient(ellipse 90% 70% at 50% 100%, rgba(232,163,61,0.22), transparent 75%);
+  animation-duration: 1.4s;
+}
+
+.audio-stage.processing .stage-scan,
+.audio-stage.batch .stage-scan {
+  animation-duration: 1.2s;
+  background: linear-gradient(90deg, transparent 0%, rgba(232,163,61,0.35) 50%, transparent 100%);
+}
+
+/* Burst on completion */
+.audio-stage.burst .stage-bars .bar {
+  animation: bar-burst 0.6s ease-out;
+}
+
+@keyframes bar-burst {
+  0%   { height: var(--peak, 70%); filter: brightness(1.2); }
+  35%  { height: 100%; filter: brightness(2) saturate(1.4); box-shadow: 0 0 18px rgba(232,163,61,1); }
+  100% { height: 30%; filter: brightness(1); }
+}
+
+.audio-stage.burst::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 100% 100% at 50% 50%, rgba(232,163,61,0.35), transparent 70%);
+  animation: burst-flash 0.6s ease-out;
+  pointer-events: none;
+  z-index: 4;
+}
+
+@keyframes burst-flash {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 @keyframes dot-pulse {
   0%, 100% {
     box-shadow: 0 0 6px rgba(232,163,61,0.6);

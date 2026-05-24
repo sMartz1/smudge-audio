@@ -37,6 +37,14 @@ const variationCounter = document.getElementById('variation-counter');
 const vdEls = Array.from(variationRow.querySelectorAll('.vd'));
 const VARIATION_COUNT = vdEls.length;
 
+const audioStage = document.getElementById('audio-stage');
+const stageName = document.getElementById('stage-name');
+const stageState = document.getElementById('stage-state');
+const stageBars = document.getElementById('stage-bars');
+const stageBarsReflect = document.getElementById('stage-bars-reflect');
+const stageProgress = document.getElementById('stage-progress');
+const STAGE_BAR_COUNT = 72;
+
 // ============ STATE ============
 
 const SLIDERS = {
@@ -148,10 +156,12 @@ function setSourceState(state, filePath, displayName) {
     processBtn.disabled = false;
     batchBtn.disabled = false;
     flashZone('source');
+    showStage(name);
   } else {
     inputPath = null;
     processBtn.disabled = true;
     batchBtn.disabled = true;
+    hideStage();
   }
 }
 
@@ -294,6 +304,79 @@ function hideError() {
   errorPanel.classList.add('hidden');
   if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
 }
+
+// ============ AUDIO STAGE ============
+
+function buildStageBars() {
+  // Generate a "wave-like" peak distribution so the bars have a coherent
+  // envelope when paused — not just pure random — and dance with staggered
+  // delays that look organic when animating.
+  const html = [];
+  for (let i = 0; i < STAGE_BAR_COUNT; i++) {
+    // Envelope shape: a few overlapping sine humps to mimic musical content
+    const t = i / (STAGE_BAR_COUNT - 1);
+    const envelope =
+      0.55 +
+      0.25 * Math.sin(t * Math.PI * 2 + 0.3) +
+      0.15 * Math.sin(t * Math.PI * 6 + 1.4) +
+      0.10 * (Math.random() * 2 - 1);
+    const peak = Math.max(20, Math.min(98, envelope * 100));
+    const dur = 500 + Math.random() * 1100;
+    const delay = -Math.floor(Math.random() * 2000); // start mid-cycle
+    html.push(
+      `<span class="bar" style="--peak:${peak.toFixed(1)}%;--dur:${Math.round(dur)}ms;--delay:${delay}ms"></span>`
+    );
+  }
+  const out = html.join('');
+  stageBars.innerHTML = out;
+  stageBarsReflect.innerHTML = out;
+}
+
+function showStage(name) {
+  stageName.textContent = name || '';
+  audioStage.classList.remove('hidden', 'processing', 'batch', 'burst');
+  audioStage.setAttribute('aria-hidden', 'false');
+  stageState.textContent = 'READY';
+  stageProgress.style.width = '0%';
+}
+
+function hideStage() {
+  audioStage.classList.add('hidden');
+  audioStage.classList.remove('processing', 'batch', 'burst');
+  audioStage.setAttribute('aria-hidden', 'true');
+  stageProgress.style.width = '0%';
+}
+
+function setStageState(state, label) {
+  // state: 'ready' | 'processing' | 'batch' | 'complete'
+  audioStage.classList.remove('processing', 'batch');
+  if (state === 'processing') {
+    audioStage.classList.add('processing');
+    stageState.textContent = label || 'PROCESSING';
+  } else if (state === 'batch') {
+    audioStage.classList.add('batch');
+    stageState.textContent = label || 'BATCH';
+  } else if (state === 'complete') {
+    stageState.textContent = label || 'DONE';
+    stageProgress.style.width = '100%';
+  } else {
+    stageState.textContent = label || 'READY';
+    stageProgress.style.width = '0%';
+  }
+}
+
+function pulseStageBurst() {
+  audioStage.classList.remove('burst');
+  void audioStage.offsetWidth;
+  audioStage.classList.add('burst');
+  setTimeout(() => audioStage.classList.remove('burst'), 700);
+}
+
+function setStageProgress(percent) {
+  stageProgress.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
+buildStageBars();
 
 function flashZone(zoneName) {
   const zone = document.querySelector(`.zone[data-zone="${zoneName}"]`);
@@ -449,6 +532,7 @@ window.api.onProgress((percent) => {
   ctaProgress.classList.remove('indeterminate');
   ctaProgress.style.width = `${percent}%`;
   updateSteps(percent);
+  setStageProgress(percent);
 });
 
 window.api.onBatchProgress(({ variationIdx, overallPercent, total, completed }) => {
@@ -456,6 +540,8 @@ window.api.onBatchProgress(({ variationIdx, overallPercent, total, completed }) 
   ctaProgress.classList.remove('indeterminate');
   ctaProgress.style.width = `${overallPercent}%`;
   variationCounter.textContent = `VAR ${variationIdx + 1} / ${total}`;
+  setStageState('batch', `VAR ${variationIdx + 1}/${total}`);
+  setStageProgress(overallPercent);
   if (!completed) updateVariationDots(variationIdx);
 });
 
@@ -480,6 +566,7 @@ processBtn.addEventListener('click', async () => {
   ctaLabel.textContent = 'PROCESANDO...';
   showSteps(true);
   flashZone('output');
+  setStageState('processing');
 
   const fullParams = {
     ...params,
@@ -496,10 +583,16 @@ processBtn.addEventListener('click', async () => {
 
   if (res.ok) {
     updateSteps(100);
-    setTimeout(() => showSteps(false), 1200);
+    setStageState('complete', 'DONE');
+    pulseStageBurst();
+    setTimeout(() => {
+      showSteps(false);
+      setStageState('ready');
+    }, 1800);
     showStatus(`Listo: ${outputPath}`, { success: true, autohide: 6000 });
   } else {
     showSteps(false);
+    setStageState('ready');
     hideStatus();
     showError(res.error);
   }
@@ -532,6 +625,7 @@ batchBtn.addEventListener('click', async () => {
   showSteps(true);
   showVariationRow(true);
   flashZone('output');
+  setStageState('batch', `VAR 1/${VARIATION_COUNT}`);
 
   const res = await window.api.processBatch({
     inputPath, outputDir, baseName, ext, variations
@@ -546,14 +640,18 @@ batchBtn.addEventListener('click', async () => {
   if (res.ok) {
     updateSteps(100);
     markAllVariationsDone();
+    setStageState('complete', 'DONE');
+    pulseStageBurst();
     showStatus(`Listo: ${VARIATION_COUNT} variaciones en ${res.outputDir}`, { success: true, autohide: 8000 });
     setTimeout(() => {
       showSteps(false);
       showVariationRow(false);
+      setStageState('ready');
     }, 3500);
   } else {
     showSteps(false);
     showVariationRow(false);
+    setStageState('ready');
     hideStatus();
     showError(res.error);
   }

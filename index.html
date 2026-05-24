@@ -170,6 +170,21 @@
         </button>
       </div>
     </section>
+
+    <section class="audio-stage hidden" id="audio-stage" aria-hidden="true">
+      <div class="stage-header">
+        <span class="stage-label">SIGNAL</span>
+        <span class="stage-name" id="stage-name"></span>
+        <span class="stage-state" id="stage-state">READY</span>
+      </div>
+      <div class="stage-viz">
+        <div class="stage-bars" id="stage-bars"></div>
+        <div class="stage-bars stage-bars-reflect" id="stage-bars-reflect" aria-hidden="true"></div>
+        <div class="stage-scan" aria-hidden="true"></div>
+        <div class="stage-glow" aria-hidden="true"></div>
+        <div class="stage-progress" id="stage-progress" aria-hidden="true"></div>
+      </div>
+    </section>
   </main>
 
   <script src="renderer.js"></script>
