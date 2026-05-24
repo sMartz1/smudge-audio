@@ -334,6 +334,7 @@ function showStage(name) {
   audioStage.setAttribute('aria-hidden', 'false');
   stageState.textContent = 'READY';
   stageProgress.style.width = '0%';
+  unfreezeAllBars();
 }
 
 function hideStage() {
@@ -368,8 +369,34 @@ function pulseStageBurst() {
   setTimeout(() => audioStage.classList.remove('burst'), 700);
 }
 
+// Track how many bars are currently in the 'frozen-bar' state so we only
+// touch the DOM for the bars that actually crossed the progress threshold
+// this tick — keeps high-frequency progress updates cheap.
+let frozenBarCount = 0;
+
 function setStageProgress(percent) {
-  stageProgress.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  const clamped = Math.max(0, Math.min(100, percent));
+  stageProgress.style.width = `${clamped}%`;
+
+  const target = Math.floor((clamped / 100) * STAGE_BAR_COUNT);
+  if (target > frozenBarCount) {
+    for (let i = frozenBarCount; i < target; i++) {
+      stageBars.children[i]?.classList.add('frozen-bar');
+      stageBarsReflect.children[i]?.classList.add('frozen-bar');
+    }
+  } else if (target < frozenBarCount) {
+    for (let i = target; i < frozenBarCount; i++) {
+      stageBars.children[i]?.classList.remove('frozen-bar');
+      stageBarsReflect.children[i]?.classList.remove('frozen-bar');
+    }
+  }
+  frozenBarCount = target;
+}
+
+function unfreezeAllBars() {
+  for (const b of stageBars.children) b.classList.remove('frozen-bar');
+  for (const b of stageBarsReflect.children) b.classList.remove('frozen-bar');
+  frozenBarCount = 0;
 }
 
 buildStageBars();
@@ -499,24 +526,23 @@ window.api.onDownloadProgress((percent) => {
 window.api.onProgress((percent) => {
   ctaProgress.classList.remove('indeterminate');
   ctaProgress.style.width = `${percent}%`;
-  audioStage.classList.remove('frozen');
   setStageProgress(percent);
 });
 
 window.api.onBatchProgress(({ variationIdx, variationPercent, overallPercent, total, completed }) => {
   ctaProgress.classList.remove('indeterminate');
-  // CTA progress reflects overall batch position (so the button is a long-haul
-  // indicator). The audio stage shows per-song progress, which resets each var.
+  // CTA progress reflects overall batch position (long-haul gauge).
+  // The audio stage shows per-song progress, which resets each variation
+  // and progressively freezes the bars as it sweeps left-to-right.
   ctaProgress.style.width = `${overallPercent}%`;
   variationCounter.textContent = `VAR ${variationIdx + 1} / ${total}`;
   setStageState('batch', `VAR ${variationIdx + 1}/${total}`);
 
   if (completed) {
-    // Variation just finished — freeze bars, fill the per-song bar to 100%,
-    // light up its dot. Bars stay frozen until the next variation emits its
-    // first non-completed progress event.
+    // Variation just finished — fill per-song progress to 100% which freezes
+    // any remaining unfrozen bars. The dot pops here so the user sees the
+    // "captured" moment all at once.
     setStageProgress(100);
-    audioStage.classList.add('frozen');
     const dot = vdEls[variationIdx];
     if (dot && !dot.classList.contains('done')) {
       dot.classList.remove('active');
@@ -524,8 +550,8 @@ window.api.onBatchProgress(({ variationIdx, variationPercent, overallPercent, to
       setTimeout(() => dot.classList.remove('just-done'), 420);
     }
   } else {
-    // Variation in progress — unfreeze + per-song progress
-    audioStage.classList.remove('frozen');
+    // Variation in progress — setStageProgress unfreezes bars as needed when
+    // the percent drops back to 0 at variation start.
     setStageProgress(variationPercent);
     updateVariationDots(variationIdx);
   }
@@ -552,7 +578,7 @@ processBtn.addEventListener('click', async () => {
   ctaLabel.textContent = 'PROCESANDO...';
   flashZone('output');
   setStageState('processing');
-  audioStage.classList.remove('frozen');
+  unfreezeAllBars();
 
   const fullParams = {
     ...params,
@@ -568,16 +594,15 @@ processBtn.addEventListener('click', async () => {
   ctaProgress.style.width = '0%';
 
   if (res.ok) {
+    // setStageProgress(100) freezes any remaining bars as the fill reaches
+    // the right edge; the snapshot persists until a new file is loaded.
     setStageProgress(100);
     setStageState('complete', 'DONE');
     pulseStageBurst();
-    // After the burst, freeze the bars on their final shape — the final state
-    // sticks around as a "captured" snapshot until a new file is loaded.
-    setTimeout(() => audioStage.classList.add('frozen'), 700);
     showStatus(`Listo: ${outputPath}`, { success: true, autohide: 6000 });
   } else {
     setStageState('ready');
-    audioStage.classList.remove('frozen');
+    unfreezeAllBars();
     hideStatus();
     showError(res.error);
   }
@@ -610,7 +635,7 @@ batchBtn.addEventListener('click', async () => {
   showVariationRow(true);
   flashZone('output');
   setStageState('batch', `VAR 1/${VARIATION_COUNT}`);
-  audioStage.classList.remove('frozen');
+  unfreezeAllBars();
 
   const res = await window.api.processBatch({
     inputPath, outputDir, baseName, ext, variations
@@ -627,12 +652,11 @@ batchBtn.addEventListener('click', async () => {
     markAllVariationsDone();
     setStageState('complete', 'DONE');
     pulseStageBurst();
-    setTimeout(() => audioStage.classList.add('frozen'), 700);
     showStatus(`Listo: ${VARIATION_COUNT} variaciones en ${res.outputDir}`, { success: true, autohide: 8000 });
   } else {
     showVariationRow(false);
     setStageState('ready');
-    audioStage.classList.remove('frozen');
+    unfreezeAllBars();
     hideStatus();
     showError(res.error);
   }
