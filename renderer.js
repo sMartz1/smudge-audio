@@ -171,18 +171,20 @@ function setBusy(busy) {
 
 const VAR_START = {
   pitchCents: 0, tempoPercent: 0, bassDb: 0, trebleDb: 0,
-  reverbMix: 0, noiseDb: -50,
+  reverbMix: 0, noiseDb: -50, brownNoiseDb: -50,
   timingJitter: 0, tapeSim: 0, cabinetMix: 0, codecLaunder: 0
 };
-// v10 now reaches anti-fingerprint territory: 3-semitone pitch shift, +12%
-// tempo, max-intensity chunked jitter, full lo-fi codec laundering (8kHz lowpass
-// + 12-bit acrusher). Audible alteration but designed to defeat detectors.
+// v10 is the nuclear option: 3-semitone pitch shift (runs TWICE via multi-pass
+// from v07+ → ~5 semitones effective), +12% tempo (compounds to ~25%), full
+// lo-fi codec laundering (5kHz lowpass, 10-bit acrusher, compounded twice),
+// audible pink+brown noise masking on top. Audibly destroyed; designed to walk
+// past acoustic fingerprinting end-to-end.
 const VAR_END = {
   pitchCents: 300, tempoPercent: 12, bassDb: -4, trebleDb: 4,
-  reverbMix: 25, noiseDb: -15,
+  reverbMix: 25, noiseDb: -5, brownNoiseDb: -10,
   timingJitter: 1.0, tapeSim: 1.0, cabinetMix: 35, codecLaunder: 1.0
 };
-const INT_PARAMS = new Set(['pitchCents', 'tempoPercent', 'bassDb', 'trebleDb', 'reverbMix', 'noiseDb']);
+const INT_PARAMS = new Set(['pitchCents', 'tempoPercent', 'bassDb', 'trebleDb', 'reverbMix', 'noiseDb', 'brownNoiseDb']);
 
 function lerpParams(t) {
   const out = {};

@@ -13,12 +13,13 @@ const NEUTRAL = {
   bassDb: 0,
   trebleDb: 0,
   reverbMix: 0,
-  noiseDb: -50,
+  noiseDb: -50,        // pink noise level
+  brownNoiseDb: -50,   // brown noise level (second masking layer)
   sunoScrub: false,
-  timingJitter: 0,    // 0..1 intensity (chunked atempo jitter)
-  tapeSim: 0,         // 0..1 intensity (wow + soft compression)
-  cabinetMix: 0,      // 0..100 wet % (EQ-based speaker shape)
-  codecLaunder: 0     // 0..1 lo-fi degradation (lowpass + bit reduction)
+  timingJitter: 0,
+  tapeSim: 0,
+  cabinetMix: 0,
+  codecLaunder: 0
 };
 
 // Documented Suno watermark bands.
@@ -88,6 +89,7 @@ function buildFilter(params, duration) {
   const useTreble = Math.abs(p.trebleDb) >= 0.1;
   const useReverb = p.reverbMix >= 0.5;
   const useNoise = p.noiseDb > -49.5;
+  const useBrown = p.brownNoiseDb > -49.5;
   const useSunoScrub = p.sunoScrub === true;
   const useJitter = p.timingJitter > 0.01 && duration && duration > 1.5;
   const useTape = p.tapeSim > 0.01;
@@ -96,18 +98,20 @@ function buildFilter(params, duration) {
 
   const hasAnyProcessing =
     usePitch || useTempo || useBass || useTreble || useReverb ||
-    useSunoScrub || useJitter || useTape || useCabinet || useDegrade;
+    useSunoScrub || useJitter || useTape || useCabinet || useDegrade ||
+    useBrown;
 
-  // Input index allocation: 0 user; pink noise (if used) is the next.
-  // Cabinet sim is now EQ-based, no extra input file.
+  // Input index allocation: 0 user; then optional pink + brown noise inputs.
   let nextIdx = 1;
   const noiseIdx = useNoise ? nextIdx++ : -1;
+  const brownIdx = useBrown ? nextIdx++ : -1;
 
   // Pure passthrough fast path.
-  if (!hasAnyProcessing && !useNoise) {
+  if (!hasAnyProcessing && !useNoise && !useBrown) {
     return {
       complex: '[0:a]anull[out]',
-      needsNoiseInput: false
+      needsNoiseInput: false,
+      needsBrownInput: false
     };
   }
 
@@ -155,8 +159,8 @@ function buildFilter(params, duration) {
   // detectors hash. Lowpass cuts high-frequency fingerprint material; acrusher
   // adds harmonic distortion that shifts peaks off the original locations.
   if (useDegrade) {
-    const lpFreq = Math.round(20000 - 12000 * p.codecLaunder);  // 20k -> 8k
-    const bits = (16 - 4 * p.codecLaunder).toFixed(2);          // 16 -> 12 bits
+    const lpFreq = Math.round(20000 - 15000 * p.codecLaunder); // 20k -> 5k
+    const bits = (16 - 6 * p.codecLaunder).toFixed(2);         // 16 -> 10 bits
     linear.push(`lowpass=f=${lpFreq}`);
     linear.push(`acrusher=bits=${bits}:samples=1:mode=lin:level_in=1:level_out=1`);
   }
@@ -185,12 +189,27 @@ function buildFilter(params, duration) {
     currentLabel = '[cab]';
   }
 
-  // 4. Final stage: noise mix or relabel to [out]
+  // 4. Final stage: mix pink + brown noise layers into the processed signal.
+  // Both noise types together cover the spectrum more uniformly than either
+  // alone (pink 1/f favors lows, brown 1/f^2 favors lows even more, white is
+  // flat — pink+brown skews bass-heavy which masks rhythmic content well).
+  const noiseSources = [];
   if (useNoise) {
-    parts.push(`[${noiseIdx}:a]volume=${p.noiseDb}dB[nz]`);
-    parts.push(`${currentLabel}[nz]amix=inputs=2:duration=first:normalize=0[out]`);
+    parts.push(`[${noiseIdx}:a]volume=${p.noiseDb}dB[nzP]`);
+    noiseSources.push('[nzP]');
+  }
+  if (useBrown) {
+    parts.push(`[${brownIdx}:a]volume=${p.brownNoiseDb}dB[nzB]`);
+    noiseSources.push('[nzB]');
+  }
+
+  if (noiseSources.length > 0) {
+    const mixCount = 1 + noiseSources.length; // signal + N noise layers
+    parts.push(
+      `${currentLabel}${noiseSources.join('')}amix=inputs=${mixCount}:duration=first:normalize=0[out]`
+    );
   } else {
-    // Relabel the last node's output to [out]
+    // No masking: relabel last node's output to [out]
     parts[parts.length - 1] = parts[parts.length - 1].replace(
       /\[(jit|lin|cab)\]$/,
       '[out]'
@@ -199,7 +218,8 @@ function buildFilter(params, duration) {
 
   return {
     complex: parts.join(';'),
-    needsNoiseInput: useNoise
+    needsNoiseInput: useNoise,
+    needsBrownInput: useBrown
   };
 }
 
@@ -221,11 +241,14 @@ async function processAudio(inputPath, outputPath, params, onProgress) {
   const duration = p.timingJitter > 0.01 ? await getDuration(inputPath) : null;
 
   return new Promise((resolve, reject) => {
-    const { complex, needsNoiseInput } = buildFilter(p, duration);
+    const { complex, needsNoiseInput, needsBrownInput } = buildFilter(p, duration);
 
     const cmd = ffmpeg().input(inputPath);
     if (needsNoiseInput) {
       cmd.input('anoisesrc=color=pink:amplitude=1.0').inputOptions(['-f', 'lavfi']);
+    }
+    if (needsBrownInput) {
+      cmd.input('anoisesrc=color=brown:amplitude=1.0').inputOptions(['-f', 'lavfi']);
     }
 
     cmd

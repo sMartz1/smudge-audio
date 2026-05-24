@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { processAudio } = require('./audio-processor');
 const { isYoutubeUrl, downloadAudio } = require('./youtube-downloader');
 
@@ -98,6 +99,14 @@ ipcMain.handle('select-output-dir', async () => {
 
 ipcMain.handle('process-batch', async (event, { inputPath, outputDir, baseName, ext, variations }) => {
   const total = variations.length;
+  // Multi-pass kicks in for highly-aggressive variations. The chain runs
+  // sequentially on its own output: pitch/tempo/jitter/degrade all compound,
+  // wrecking the fingerprint at the cost of audible quality loss.
+  const multiPassFromIdx = Math.ceil(total * 0.6); // v07+ of 10
+
+  const passTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smudge-pass-'));
+  tempDirs.add(passTmpDir);
+
   try {
     for (let i = 0; i < total; i++) {
       const params = variations[i];
@@ -105,7 +114,9 @@ ipcMain.handle('process-batch', async (event, { inputPath, outputDir, baseName, 
         outputDir,
         `${baseName}_v${String(i + 1).padStart(2, '0')}${ext}`
       );
-      await processAudio(inputPath, outFile, params, (percent) => {
+      const doubled = i >= multiPassFromIdx;
+
+      const emit = (percent) => {
         const overall = ((i + percent / 100) / total) * 100;
         event.sender.send('batch-progress', {
           variationIdx: i,
@@ -113,7 +124,18 @@ ipcMain.handle('process-batch', async (event, { inputPath, outputDir, baseName, 
           overallPercent: overall,
           total
         });
-      });
+      };
+
+      if (doubled) {
+        // Pass 1 to tmp, pass 2 from tmp to final. Map progress 0-50 / 50-100.
+        const tmpFile = path.join(passTmpDir, `pass1_v${i}${ext}`);
+        await processAudio(inputPath, tmpFile, params, (p) => emit(p * 0.5));
+        await processAudio(tmpFile, outFile, params, (p) => emit(50 + p * 0.5));
+        try { fs.unlinkSync(tmpFile); } catch (_) {}
+      } else {
+        await processAudio(inputPath, outFile, params, emit);
+      }
+
       event.sender.send('batch-progress', {
         variationIdx: i,
         variationPercent: 100,
