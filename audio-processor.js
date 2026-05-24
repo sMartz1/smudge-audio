@@ -16,6 +16,7 @@ const NEUTRAL = {
   noiseDb: -50,        // pink noise level
   brownNoiseDb: -50,   // brown noise level (second masking layer)
   sunoScrub: false,
+  vocalScrub: false,   // vocal-aware mode: center duck + formant-preserved pitch
   timingJitter: 0,
   tapeSim: 0,
   cabinetMix: 0,
@@ -80,7 +81,7 @@ function buildJitterSegment(duration, intensity, srcLabel, outLabel) {
   return lines.join(';');
 }
 
-function buildFilter(params, duration) {
+function buildFilter(params, duration, channels = 1) {
   const p = { ...NEUTRAL, ...params };
 
   const usePitch = Math.abs(p.pitchCents) >= 1;
@@ -91,6 +92,10 @@ function buildFilter(params, duration) {
   const useNoise = p.noiseDb > -49.5;
   const useBrown = p.brownNoiseDb > -49.5;
   const useSunoScrub = p.sunoScrub === true;
+  // Center-channel duck only makes sense on stereo content — skip on mono.
+  // Formant preservation in rubberband still applies even on mono.
+  const useVocalDuck = p.vocalScrub === true && channels >= 2;
+  const useVocalFormant = p.vocalScrub === true;
   const useJitter = p.timingJitter > 0.01 && duration && duration > 1.5;
   const useTape = p.tapeSim > 0.01;
   const useCabinet = p.cabinetMix > 0.5;
@@ -99,7 +104,7 @@ function buildFilter(params, duration) {
   const hasAnyProcessing =
     usePitch || useTempo || useBass || useTreble || useReverb ||
     useSunoScrub || useJitter || useTape || useCabinet || useDegrade ||
-    useBrown;
+    useBrown || useVocalDuck;
 
   // Input index allocation: 0 user; then optional pink + brown noise inputs.
   let nextIdx = 1;
@@ -135,7 +140,17 @@ function buildFilter(params, duration) {
   if (usePitch || useTempo) {
     const pr = Math.pow(2, p.pitchCents / 1200);
     const tr = 1 + p.tempoPercent / 100;
-    linear.push(`rubberband=pitch=${pr.toFixed(6)}:tempo=${tr.toFixed(6)}`);
+    // Formant preservation keeps vowel character intact under pitch shift —
+    // avoids chipmunk voices and hurts transcription matching less.
+    const formantFlag = useVocalFormant ? ':formant=preserved' : '';
+    linear.push(`rubberband=pitch=${pr.toFixed(6)}:tempo=${tr.toFixed(6)}${formantFlag}`);
+  }
+
+  // Vocal duck: subtract a portion of the opposite channel from each side so
+  // anything mixed dead-center (typically the lead vocal) gets attenuated by
+  // ~60%. Stereo-panned instruments survive intact.
+  if (useVocalDuck) {
+    linear.push('pan=stereo|c0=0.7*c0-0.3*c1|c1=-0.3*c0+0.7*c1');
   }
   if (useBass) linear.push(`bass=g=${p.bassDb.toFixed(2)}`);
   if (useTreble) linear.push(`treble=g=${p.trebleDb.toFixed(2)}`);
@@ -223,13 +238,17 @@ function buildFilter(params, duration) {
   };
 }
 
-function getDuration(filePath) {
+function getAudioInfo(filePath) {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, data) => {
       if (err) return reject(err);
-      const d = data && data.format && parseFloat(data.format.duration);
-      if (!isFinite(d)) return reject(new Error('No se pudo leer la duracion del audio.'));
-      resolve(d);
+      const duration = parseFloat(data?.format?.duration ?? 'NaN');
+      const audioStream = data?.streams?.find((s) => s.codec_type === 'audio');
+      const channels = audioStream?.channels ?? 1;
+      if (!isFinite(duration)) {
+        return reject(new Error('No se pudo leer la duracion del audio.'));
+      }
+      resolve({ duration, channels });
     });
   });
 }
@@ -237,11 +256,15 @@ function getDuration(filePath) {
 async function processAudio(inputPath, outputPath, params, onProgress) {
   const p = { ...NEUTRAL, ...params };
 
-  // Only probe when jitter is needed — saves a subprocess on the common path.
-  const duration = p.timingJitter > 0.01 ? await getDuration(inputPath) : null;
+  // Probe is needed when jitter requires duration OR vocalScrub needs channel
+  // count. Single subprocess gives us both.
+  const needsProbe = p.timingJitter > 0.01 || p.vocalScrub;
+  const info = needsProbe ? await getAudioInfo(inputPath) : null;
+  const duration = info?.duration ?? null;
+  const channels = info?.channels ?? 1;
 
   return new Promise((resolve, reject) => {
-    const { complex, needsNoiseInput, needsBrownInput } = buildFilter(p, duration);
+    const { complex, needsNoiseInput, needsBrownInput } = buildFilter(p, duration, channels);
 
     const cmd = ffmpeg().input(inputPath);
     if (needsNoiseInput) {

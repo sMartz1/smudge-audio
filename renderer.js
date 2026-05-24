@@ -26,6 +26,7 @@ const winMax = document.getElementById('win-max');
 const winClose = document.getElementById('win-close');
 
 const sunoScrubToggle = document.getElementById('suno-scrub');
+const vocalScrubToggle = document.getElementById('vocal-scrub');
 
 const batchBtn = document.getElementById('batch-btn');
 const variationRow = document.getElementById('variation-row');
@@ -210,7 +211,8 @@ function buildVariations(count) {
     // and is the cheapest layer for defeating Suno-trained detectors.
     out.push({
       ...lerpParams(t),
-      sunoScrub: t > 0
+      sunoScrub: t > 0,
+      vocalScrub: vocalScrubToggle.checked
     });
   }
   return out;
@@ -583,7 +585,8 @@ processBtn.addEventListener('click', async () => {
   const fullParams = {
     ...params,
     ...presetExtras,
-    sunoScrub: sunoScrubToggle.checked
+    sunoScrub: sunoScrubToggle.checked,
+    vocalScrub: vocalScrubToggle.checked
   };
   const res = await window.api.processAudio({ inputPath, outputPath, params: fullParams });
 
