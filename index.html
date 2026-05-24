@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Smudge</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>Smudge</h1>
+
+    <div id="drop-zone" class="drop-zone">
+      <p id="drop-text">Arrastra un audio aqui o</p>
+      <button id="browse-btn" type="button">Seleccionar archivo</button>
+    </div>
+
+    <div class="separator"><span>o desde YouTube</span></div>
+
+    <div class="url-row">
+      <input id="url-input" type="text" placeholder="https://www.youtube.com/watch?v=..." />
+      <button id="url-btn" type="button">Cargar</button>
+    </div>
+
+    <p id="file-name" class="file-name"></p>
+
+    <div class="preset-row" id="preset-row">
+      <button type="button" class="preset" data-preset="off">Off</button>
+      <button type="button" class="preset active" data-preset="suave">Suave</button>
+      <button type="button" class="preset" data-preset="medio">Medio</button>
+      <button type="button" class="preset" data-preset="agresivo">Agresivo</button>
+    </div>
+
+    <details class="advanced">
+      <summary>Avanzado</summary>
+      <div class="advanced-grid">
+        <label>Pitch <span id="pitch-value">+30</span> cents
+          <input id="pitch" type="range" min="-300" max="300" step="10" value="30" />
+        </label>
+        <label>Tempo <span id="tempo-value">+2</span> %
+          <input id="tempo" type="range" min="-10" max="10" step="1" value="2" />
+        </label>
+        <label>Bass <span id="bass-value">-1</span> dB
+          <input id="bass" type="range" min="-6" max="6" step="1" value="-1" />
+        </label>
+        <label>Treble <span id="treble-value">+1</span> dB
+          <input id="treble" type="range" min="-6" max="6" step="1" value="1" />
+        </label>
+        <label>Reverb <span id="reverb-value">5</span> %
+          <input id="reverb" type="range" min="0" max="30" step="1" value="5" />
+        </label>
+        <label>Pink noise <span id="noise-value">-30</span> dB
+          <input id="noise" type="range" min="-50" max="-5" step="1" value="-30" />
+        </label>
+      </div>
+    </details>
+
+    <button id="process-btn" type="button" disabled>Procesar y guardar</button>
+
+    <div id="progress-wrap" class="progress-wrap hidden">
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+
+    <p id="status" class="status"></p>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

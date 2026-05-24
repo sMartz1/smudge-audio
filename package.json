@@ -1,0 +1,44 @@
+{
+  "name": "smudge-audio",
+  "productName": "Smudge",
+  "version": "0.1.0",
+  "description": "Audio camouflage desktop app. Adds pink noise, pitch/tempo shift, EQ tilt and subtle reverb to defeat acoustic fingerprinting.",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "sMartz1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sMartz1/smudge-audio.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.smudge.app",
+    "productName": "Smudge",
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**",
+      "node_modules/youtube-dl-exec/bin/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "styles.css",
+      "audio-processor.js",
+      "youtube-downloader.js"
+    ]
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "youtube-dl-exec": "^3.1.7"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
