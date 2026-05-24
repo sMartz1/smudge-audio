@@ -1,4 +1,3 @@
-const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegStatic = require('ffmpeg-static');
 const ffprobeStatic = require('ffprobe-static');
@@ -7,10 +6,6 @@ const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 const ffprobePath = ffprobeStatic.path.replace('app.asar', 'app.asar.unpacked');
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
-
-const IR_PATH = path
-  .join(__dirname, 'assets', 'cabinet-ir.wav')
-  .replace('app.asar', 'app.asar.unpacked');
 
 const NEUTRAL = {
   pitchCents: 0,
@@ -102,17 +97,16 @@ function buildFilter(params, duration) {
     usePitch || useTempo || useBass || useTreble || useReverb ||
     useSunoScrub || useJitter || useTape || useCabinet;
 
-  // Input index allocation: 0 user; then conditional cabinet, noise.
+  // Input index allocation: 0 user; pink noise (if used) is the next.
+  // Cabinet sim is now EQ-based, no extra input file.
   let nextIdx = 1;
-  const cabinetIdx = useCabinet ? nextIdx++ : -1;
   const noiseIdx = useNoise ? nextIdx++ : -1;
 
   // Pure passthrough fast path.
   if (!hasAnyProcessing && !useNoise) {
     return {
       complex: '[0:a]anull[out]',
-      needsNoiseInput: false,
-      needsCabinetInput: false
+      needsNoiseInput: false
     };
   }
 
@@ -161,10 +155,22 @@ function buildFilter(params, duration) {
     currentLabel = '[lin]';
   }
 
-  // 3. Cabinet IR convolution
+  // 3. Cabinet sim: speaker-shape EQ on a wet branch, amix with dry.
+  // Replaces a previous afir convolution that destroyed the signal because
+  // the IR was a noise burst and afir's default gtype=peak attenuated by ~70dB.
   if (useCabinet) {
-    const wet = ((p.cabinetMix / 100) * 0.5).toFixed(3);
-    parts.push(`${currentLabel}[${cabinetIdx}:a]afir=dry=1.0:wet=${wet}[cab]`);
+    const wet = (p.cabinetMix / 100).toFixed(3);
+    const dry = (1 - p.cabinetMix / 100).toFixed(3);
+    parts.push(`${currentLabel}asplit=2[cabDry][cabWet]`);
+    parts.push(
+      `[cabWet]highpass=f=80:width_type=q:width=0.7,` +
+      `lowpass=f=6000:width_type=q:width=0.7,` +
+      `equalizer=f=200:t=q:w=1.5:g=2.5,` +
+      `equalizer=f=4000:t=q:w=2:g=-3,` +
+      `volume=${wet}[cabWetV]`
+    );
+    parts.push(`[cabDry]volume=${dry}[cabDryV]`);
+    parts.push(`[cabDryV][cabWetV]amix=inputs=2:normalize=0[cab]`);
     currentLabel = '[cab]';
   }
 
@@ -182,8 +188,7 @@ function buildFilter(params, duration) {
 
   return {
     complex: parts.join(';'),
-    needsNoiseInput: useNoise,
-    needsCabinetInput: useCabinet
+    needsNoiseInput: useNoise
   };
 }
 
@@ -205,12 +210,9 @@ async function processAudio(inputPath, outputPath, params, onProgress) {
   const duration = p.timingJitter > 0.01 ? await getDuration(inputPath) : null;
 
   return new Promise((resolve, reject) => {
-    const { complex, needsNoiseInput, needsCabinetInput } = buildFilter(p, duration);
+    const { complex, needsNoiseInput } = buildFilter(p, duration);
 
     const cmd = ffmpeg().input(inputPath);
-    if (needsCabinetInput) {
-      cmd.input(IR_PATH);
-    }
     if (needsNoiseInput) {
       cmd.input('anoisesrc=color=pink:amplitude=1.0').inputOptions(['-f', 'lavfi']);
     }
@@ -229,4 +231,4 @@ async function processAudio(inputPath, outputPath, params, onProgress) {
   });
 }
 
-module.exports = { processAudio, buildFilter, NEUTRAL, SUNO_BANDS, IR_PATH };
+module.exports = { processAudio, buildFilter, NEUTRAL, SUNO_BANDS };

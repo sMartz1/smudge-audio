@@ -22,8 +22,7 @@
     "asarUnpack": [
       "node_modules/ffmpeg-static/**",
       "node_modules/ffprobe-static/**",
-      "node_modules/youtube-dl-exec/bin/**",
-      "assets/**"
+      "node_modules/youtube-dl-exec/bin/**"
     ],
     "files": [
       "main.js",
@@ -33,8 +32,7 @@
       "styles.css",
       "audio-processor.js",
       "youtube-downloader.js",
-      "fonts/**",
-      "assets/**"
+      "fonts/**"
     ]
   },
   "dependencies": {
