@@ -27,6 +27,7 @@ const winClose = document.getElementById('win-close');
 
 const sunoScrubToggle = document.getElementById('suno-scrub');
 const vocalScrubToggle = document.getElementById('vocal-scrub');
+const lyricScrubToggle = document.getElementById('lyric-scrub');
 
 const batchBtn = document.getElementById('batch-btn');
 const variationRow = document.getElementById('variation-row');
@@ -212,7 +213,8 @@ function buildVariations(count) {
     out.push({
       ...lerpParams(t),
       sunoScrub: t > 0,
-      vocalScrub: vocalScrubToggle.checked
+      vocalScrub: vocalScrubToggle.checked,
+      lyricScrub: lyricScrubToggle.checked
     });
   }
   return out;
@@ -586,7 +588,8 @@ processBtn.addEventListener('click', async () => {
     ...params,
     ...presetExtras,
     sunoScrub: sunoScrubToggle.checked,
-    vocalScrub: vocalScrubToggle.checked
+    vocalScrub: vocalScrubToggle.checked,
+    lyricScrub: lyricScrubToggle.checked
   };
   const res = await window.api.processAudio({ inputPath, outputPath, params: fullParams });
 

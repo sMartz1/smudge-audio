@@ -16,7 +16,8 @@ const NEUTRAL = {
   noiseDb: -50,        // pink noise level
   brownNoiseDb: -50,   // brown noise level (second masking layer)
   sunoScrub: false,
-  vocalScrub: false,   // vocal-aware mode: center duck + formant-preserved pitch
+  vocalScrub: false,   // vocal-aware: center duck + formant-preserved pitch
+  lyricScrub: false,   // anti-ASR: reverse layer + consonant notches + formant destruction
   timingJitter: 0,
   tapeSim: 0,
   cabinetMix: 0,
@@ -95,7 +96,10 @@ function buildFilter(params, duration, channels = 1) {
   // Center-channel duck only makes sense on stereo content — skip on mono.
   // Formant preservation in rubberband still applies even on mono.
   const useVocalDuck = p.vocalScrub === true && channels >= 2;
-  const useVocalFormant = p.vocalScrub === true;
+  const useLyricScrub = p.lyricScrub === true;
+  // Lyric scrub WANTS formants destroyed (chipmunk = ASR can't read phonemes),
+  // so it overrides vocal scrub's formant preservation.
+  const useVocalFormant = p.vocalScrub === true && !useLyricScrub;
   const useJitter = p.timingJitter > 0.01 && duration && duration > 1.5;
   const useTape = p.tapeSim > 0.01;
   const useCabinet = p.cabinetMix > 0.5;
@@ -104,10 +108,12 @@ function buildFilter(params, duration, channels = 1) {
   const hasAnyProcessing =
     usePitch || useTempo || useBass || useTreble || useReverb ||
     useSunoScrub || useJitter || useTape || useCabinet || useDegrade ||
-    useBrown || useVocalDuck;
+    useBrown || useVocalDuck || useLyricScrub;
 
-  // Input index allocation: 0 user; then optional pink + brown noise inputs.
+  // Input index allocation: 0 user main; optional re-mount for reverse layer;
+  // then optional pink + brown noise.
   let nextIdx = 1;
+  const reverseIdx = useLyricScrub ? nextIdx++ : -1;
   const noiseIdx = useNoise ? nextIdx++ : -1;
   const brownIdx = useBrown ? nextIdx++ : -1;
 
@@ -116,7 +122,8 @@ function buildFilter(params, duration, channels = 1) {
     return {
       complex: '[0:a]anull[out]',
       needsNoiseInput: false,
-      needsBrownInput: false
+      needsBrownInput: false,
+      needsReverseInput: false
     };
   }
 
@@ -152,6 +159,16 @@ function buildFilter(params, duration, channels = 1) {
   if (useVocalDuck) {
     linear.push('pan=stereo|c0=0.7*c0-0.3*c1|c1=-0.3*c0+0.7*c1');
   }
+
+  // Anti-ASR consonant notches: speech intelligibility lives in narrow bands
+  // (nasal vowels ~1.5kHz, sibilants ~2.8kHz, stops ~4.5kHz). Notching these
+  // narrow bands wrecks transcription while music carries on (most tones are
+  // wider than the notches).
+  if (useLyricScrub) {
+    linear.push('bandreject=f=1500:width_type=h:w=300');
+    linear.push('bandreject=f=2800:width_type=h:w=400');
+    linear.push('bandreject=f=4500:width_type=h:w=500');
+  }
   if (useBass) linear.push(`bass=g=${p.bassDb.toFixed(2)}`);
   if (useTreble) linear.push(`treble=g=${p.trebleDb.toFixed(2)}`);
 
@@ -185,7 +202,17 @@ function buildFilter(params, duration, channels = 1) {
     currentLabel = '[lin]';
   }
 
-  // 3. Cabinet sim: speaker-shape EQ on a wet branch, amix with dry.
+  // 3a. Lyric scrub reverse layer: take the original input, reverse it, drop to
+  // -15dB and mix into the processed signal. Inaudible-ish to human ears
+  // (masked by main signal) but Whisper/ASR sees a second speech-like layer
+  // running backwards and degrades sharply.
+  if (useLyricScrub) {
+    parts.push(`[${reverseIdx}:a]areverse,volume=-15dB[rev]`);
+    parts.push(`${currentLabel}[rev]amix=inputs=2:duration=first:normalize=0[lyric]`);
+    currentLabel = '[lyric]';
+  }
+
+  // 3b. Cabinet sim: speaker-shape EQ on a wet branch, amix with dry.
   // Replaces a previous afir convolution that destroyed the signal because
   // the IR was a noise burst and afir's default gtype=peak attenuated by ~70dB.
   if (useCabinet) {
@@ -226,7 +253,7 @@ function buildFilter(params, duration, channels = 1) {
   } else {
     // No masking: relabel last node's output to [out]
     parts[parts.length - 1] = parts[parts.length - 1].replace(
-      /\[(jit|lin|cab)\]$/,
+      /\[(jit|lin|cab|lyric)\]$/,
       '[out]'
     );
   }
@@ -234,7 +261,8 @@ function buildFilter(params, duration, channels = 1) {
   return {
     complex: parts.join(';'),
     needsNoiseInput: useNoise,
-    needsBrownInput: useBrown
+    needsBrownInput: useBrown,
+    needsReverseInput: useLyricScrub
   };
 }
 
@@ -264,9 +292,16 @@ async function processAudio(inputPath, outputPath, params, onProgress) {
   const channels = info?.channels ?? 1;
 
   return new Promise((resolve, reject) => {
-    const { complex, needsNoiseInput, needsBrownInput } = buildFilter(p, duration, channels);
+    const { complex, needsNoiseInput, needsBrownInput, needsReverseInput } =
+      buildFilter(p, duration, channels);
 
+    // Inputs must be added in the same order buildFilter's index allocation:
+    // main, [reverse-source], [pink], [brown].
     const cmd = ffmpeg().input(inputPath);
+    if (needsReverseInput) {
+      // Same file mounted twice; areverse pulls from this second mount.
+      cmd.input(inputPath);
+    }
     if (needsNoiseInput) {
       cmd.input('anoisesrc=color=pink:amplitude=1.0').inputOptions(['-f', 'lavfi']);
     }
