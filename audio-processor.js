@@ -1,8 +1,16 @@
+const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegStatic = require('ffmpeg-static');
+const ffprobeStatic = require('ffprobe-static');
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
+const ffprobePath = ffprobeStatic.path.replace('app.asar', 'app.asar.unpacked');
 ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
+
+const IR_PATH = path
+  .join(__dirname, 'assets', 'cabinet-ir.wav')
+  .replace('app.asar', 'app.asar.unpacked');
 
 const NEUTRAL = {
   pitchCents: 0,
@@ -11,25 +19,73 @@ const NEUTRAL = {
   trebleDb: 0,
   reverbMix: 0,
   noiseDb: -50,
-  sunoScrub: false
+  sunoScrub: false,
+  // V2 additions:
+  timingJitter: 0,   // 0..1 intensity (chunked atempo jitter)
+  tapeSim: 0,        // 0..1 intensity (wow + soft compression)
+  cabinetMix: 0      // 0..100 wet % (afir convolution with cabinet IR)
 };
 
-// Suno watermark frequency bands documented by ai-audio-fingerprint-remover.
-// Center freq (Hz), bandwidth (Hz). Narrow bands stay inaudible; wider ultrasonic
-// bands sit above most musical content and rely on graceful no-op past Nyquist.
+// Documented Suno watermark bands.
 const SUNO_BANDS = [
-  { f: 100,   w: 100  }, // 50–150 low-freq steganography
-  { f: 8100,  w: 200  }, // 8000–8200 mid-range marker
-  { f: 12050, w: 100  }, // 12000–12100 secondary marker
-  { f: 15500, w: 1000 }, // 15000–16000 mid-high watermark
-  { f: 18000, w: 1000 }, // 17500–18500 extended
-  { f: 19500, w: 1000 }, // 19000–20000 ultrasonic primary
-  { f: 22500, w: 1000 }  // 22000–23000 extended ultrasonic
+  { f: 100,   w: 100  },
+  { f: 8100,  w: 200  },
+  { f: 12050, w: 100  },
+  { f: 15500, w: 1000 },
+  { f: 18000, w: 1000 },
+  { f: 19500, w: 1000 },
+  { f: 22500, w: 1000 }
 ];
 
-function buildFilter(params) {
+// Deterministic PRNG so the same input + params always yields the same jitter sequence.
+function makeRand(seed) {
+  let s = seed | 0;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+
+function buildJitterSegment(duration, intensity, srcLabel, outLabel) {
+  const CHUNK_S = 1.0;
+  const MAX_CHUNKS = 500;
+  let chunkSize = CHUNK_S;
+  let numChunks = Math.ceil(duration / chunkSize);
+  if (numChunks > MAX_CHUNKS) {
+    chunkSize = duration / MAX_CHUNKS;
+    numChunks = MAX_CHUNKS;
+  }
+  if (numChunks < 2) {
+    // File too short for meaningful jitter — passthrough rename.
+    return `${srcLabel}anull${outLabel}`;
+  }
+
+  const maxJitter = 0.04 * intensity; // up to ±4% per chunk
+  const rand = makeRand(Math.floor(duration * 1000));
+
+  const splitOuts = [];
+  for (let i = 0; i < numChunks; i++) splitOuts.push(`[c${i}]`);
+
+  const lines = [];
+  lines.push(`${srcLabel}asplit=${numChunks}${splitOuts.join('')}`);
+
+  const trimmedOuts = [];
+  for (let i = 0; i < numChunks; i++) {
+    const start = (i * chunkSize).toFixed(6);
+    const end = ((i + 1) * chunkSize).toFixed(6);
+    const ratio = (1 + (rand() * 2 - 1) * maxJitter).toFixed(4);
+    lines.push(
+      `[c${i}]atrim=${start}:${end},asetpts=PTS-STARTPTS,atempo=${ratio}[t${i}]`
+    );
+    trimmedOuts.push(`[t${i}]`);
+  }
+
+  lines.push(`${trimmedOuts.join('')}concat=n=${numChunks}:a=1:v=0${outLabel}`);
+  return lines.join(';');
+}
+
+function buildFilter(params, duration) {
   const p = { ...NEUTRAL, ...params };
-  const chain = [];
 
   const usePitch = Math.abs(p.pitchCents) >= 1;
   const useTempo = Math.abs(p.tempoPercent) >= 0.1;
@@ -38,75 +94,126 @@ function buildFilter(params) {
   const useReverb = p.reverbMix >= 0.5;
   const useNoise = p.noiseDb > -49.5;
   const useSunoScrub = p.sunoScrub === true;
+  const useJitter = p.timingJitter > 0.01 && duration && duration > 1.5;
+  const useTape = p.tapeSim > 0.01;
+  const useCabinet = p.cabinetMix > 0.5;
 
-  const hasAnyProcessing = usePitch || useTempo || useBass || useTreble || useReverb || useSunoScrub;
+  const hasAnyProcessing =
+    usePitch || useTempo || useBass || useTreble || useReverb ||
+    useSunoScrub || useJitter || useTape || useCabinet;
 
-  // Declick first to smooth Suno's generation-boundary clicks before further processing.
-  // Only when there's already other processing — avoids touching pure-passthrough.
-  if (hasAnyProcessing) {
-    chain.push('adeclick');
-  }
+  // Input index allocation: 0 user; then conditional cabinet, noise.
+  let nextIdx = 1;
+  const cabinetIdx = useCabinet ? nextIdx++ : -1;
+  const noiseIdx = useNoise ? nextIdx++ : -1;
 
-  // Suno scrub: surgical notches on the documented watermark bands. Placed BEFORE
-  // pitch/tempo so the notch frequencies hit the actual watermark before any shift.
-  if (useSunoScrub) {
-    for (const b of SUNO_BANDS) {
-      chain.push(`bandreject=f=${b.f}:width_type=h:w=${b.w}`);
-    }
-  }
-
-  if (usePitch || useTempo) {
-    const pitchRatio = Math.pow(2, p.pitchCents / 1200);
-    const tempoRatio = 1 + p.tempoPercent / 100;
-    chain.push(`rubberband=pitch=${pitchRatio.toFixed(6)}:tempo=${tempoRatio.toFixed(6)}`);
-  }
-
-  if (useBass) chain.push(`bass=g=${p.bassDb.toFixed(2)}`);
-  if (useTreble) chain.push(`treble=g=${p.trebleDb.toFixed(2)}`);
-
-  if (useReverb) {
-    const outGain = (p.reverbMix / 100) * 0.6;
-    chain.push(`aecho=0.8:${outGain.toFixed(3)}:60:0.4`);
-  }
-
-  if (chain.length === 0 && !useNoise) {
-    return { complex: '[0:a]anull[out]', needsNoiseInput: false };
-  }
-
-  if (!useNoise) {
+  // Pure passthrough fast path.
+  if (!hasAnyProcessing && !useNoise) {
     return {
-      complex: `[0:a]${chain.join(',')}[out]`,
-      needsNoiseInput: false
+      complex: '[0:a]anull[out]',
+      needsNoiseInput: false,
+      needsCabinetInput: false
     };
   }
 
-  const processedLabel = chain.length === 0 ? '0:a' : 'processed';
-  const processedNode = chain.length === 0
-    ? ''
-    : `[0:a]${chain.join(',')}[processed];`;
+  const parts = [];
+  let currentLabel = '[0:a]';
+
+  // 1. Timing jitter
+  if (useJitter) {
+    parts.push(buildJitterSegment(duration, p.timingJitter, currentLabel, '[jit]'));
+    currentLabel = '[jit]';
+  }
+
+  // 2. Linear chain
+  const linear = [];
+  linear.push('adeclick');
+  if (useSunoScrub) {
+    for (const b of SUNO_BANDS) {
+      linear.push(`bandreject=f=${b.f}:width_type=h:w=${b.w}`);
+    }
+  }
+  if (usePitch || useTempo) {
+    const pr = Math.pow(2, p.pitchCents / 1200);
+    const tr = 1 + p.tempoPercent / 100;
+    linear.push(`rubberband=pitch=${pr.toFixed(6)}:tempo=${tr.toFixed(6)}`);
+  }
+  if (useBass) linear.push(`bass=g=${p.bassDb.toFixed(2)}`);
+  if (useTreble) linear.push(`treble=g=${p.trebleDb.toFixed(2)}`);
+
+  if (useTape) {
+    const wowDepth = (0.003 * p.tapeSim).toFixed(4);
+    linear.push(`vibrato=f=0.5:d=${wowDepth}`);
+    // Soft-knee tape-style compression
+    linear.push('compand=attacks=0:decays=0.1:points=-80/-80|-12/-12|0/-3');
+  }
+
+  if (useReverb) {
+    const outGain = ((p.reverbMix / 100) * 0.6).toFixed(3);
+    linear.push(`aecho=0.8:${outGain}:60:0.4`);
+  }
+
+  if (linear.length > 0) {
+    parts.push(`${currentLabel}${linear.join(',')}[lin]`);
+    currentLabel = '[lin]';
+  }
+
+  // 3. Cabinet IR convolution
+  if (useCabinet) {
+    const wet = ((p.cabinetMix / 100) * 0.5).toFixed(3);
+    parts.push(`${currentLabel}[${cabinetIdx}:a]afir=dry=1.0:wet=${wet}[cab]`);
+    currentLabel = '[cab]';
+  }
+
+  // 4. Final stage: noise mix or relabel to [out]
+  if (useNoise) {
+    parts.push(`[${noiseIdx}:a]volume=${p.noiseDb}dB[nz]`);
+    parts.push(`${currentLabel}[nz]amix=inputs=2:duration=first:normalize=0[out]`);
+  } else {
+    // Relabel the last node's output to [out]
+    parts[parts.length - 1] = parts[parts.length - 1].replace(
+      /\[(jit|lin|cab)\]$/,
+      '[out]'
+    );
+  }
 
   return {
-    complex:
-      `${processedNode}` +
-      `[1:a]volume=${p.noiseDb}dB[noise];` +
-      `[${processedLabel}][noise]amix=inputs=2:duration=first:normalize=0[out]`,
-    needsNoiseInput: true
+    complex: parts.join(';'),
+    needsNoiseInput: useNoise,
+    needsCabinetInput: useCabinet
   };
 }
 
-function processAudio(inputPath, outputPath, params, onProgress) {
+function getDuration(filePath) {
   return new Promise((resolve, reject) => {
-    const { complex, needsNoiseInput } = buildFilter(params);
+    ffmpeg.ffprobe(filePath, (err, data) => {
+      if (err) return reject(err);
+      const d = data && data.format && parseFloat(data.format.duration);
+      if (!isFinite(d)) return reject(new Error('No se pudo leer la duracion del audio.'));
+      resolve(d);
+    });
+  });
+}
+
+async function processAudio(inputPath, outputPath, params, onProgress) {
+  const p = { ...NEUTRAL, ...params };
+
+  // Only probe when jitter is needed — saves a subprocess on the common path.
+  const duration = p.timingJitter > 0.01 ? await getDuration(inputPath) : null;
+
+  return new Promise((resolve, reject) => {
+    const { complex, needsNoiseInput, needsCabinetInput } = buildFilter(p, duration);
 
     const cmd = ffmpeg().input(inputPath);
+    if (needsCabinetInput) {
+      cmd.input(IR_PATH);
+    }
     if (needsNoiseInput) {
       cmd.input('anoisesrc=color=pink:amplitude=1.0').inputOptions(['-f', 'lavfi']);
     }
 
     cmd
       .complexFilter(complex, ['out'])
-      // Strip all metadata: removes ID3, RIFF, FLAC tags AND any custom Suno chunks.
-      // First gatekeeper distributors check, mandatory baseline.
       .outputOptions(['-map_metadata', '-1'])
       .on('progress', (pr) => {
         if (typeof pr.percent === 'number') {
@@ -119,4 +226,4 @@ function processAudio(inputPath, outputPath, params, onProgress) {
   });
 }
 
-module.exports = { processAudio, buildFilter, NEUTRAL, SUNO_BANDS };
+module.exports = { processAudio, buildFilter, NEUTRAL, SUNO_BANDS, IR_PATH };

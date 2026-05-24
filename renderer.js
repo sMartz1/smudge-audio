@@ -38,12 +38,26 @@ const SLIDERS = {
   noiseDb:      { el: document.getElementById('noise'),  val: document.getElementById('noise-value'),  bipolar: false, fmt: (v) => v + ' dB' }
 };
 
+// Slider params are visible in Advanced. timingJitter/tapeSim/cabinetMix are
+// driven by the preset intensity only (not exposed as sliders) — they scale up
+// with the chosen aggressiveness.
 const PRESETS = {
   off:      { pitchCents: 0,   tempoPercent: 0, bassDb: 0,  trebleDb: 0, reverbMix: 0,  noiseDb: -50 },
   suave:    { pitchCents: 30,  tempoPercent: 2, bassDb: -1, trebleDb: 1, reverbMix: 5,  noiseDb: -30 },
   medio:    { pitchCents: 60,  tempoPercent: 4, bassDb: -2, trebleDb: 2, reverbMix: 10, noiseDb: -25 },
   agresivo: { pitchCents: 150, tempoPercent: 7, bassDb: -3, trebleDb: 3, reverbMix: 15, noiseDb: -20 }
 };
+
+// Hidden params per preset. Applied automatically when a preset is selected;
+// frozen on the preset (slider drift doesn't touch them).
+const PRESET_EXTRAS = {
+  off:      { timingJitter: 0,    tapeSim: 0,    cabinetMix: 0  },
+  suave:    { timingJitter: 0,    tapeSim: 0.3,  cabinetMix: 0  },
+  medio:    { timingJitter: 0.3,  tapeSim: 0.5,  cabinetMix: 10 },
+  agresivo: { timingJitter: 0.7,  tapeSim: 0.8,  cabinetMix: 20 }
+};
+
+let presetExtras = { ...PRESET_EXTRAS.suave };
 
 let inputPath = null;
 let params = { ...PRESETS.suave };
@@ -77,6 +91,7 @@ let animFrame = null;
 function animateToPreset(presetName) {
   const targets = { ...PRESETS[presetName] };
   params = { ...targets };
+  presetExtras = { ...PRESET_EXTRAS[presetName] };
   const starts = {};
   for (const key of Object.keys(SLIDERS)) {
     starts[key] = parseFloat(SLIDERS[key].el.value);
@@ -301,7 +316,11 @@ processBtn.addEventListener('click', async () => {
   ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'PROCESANDO...';
 
-  const fullParams = { ...params, sunoScrub: sunoScrubToggle.checked };
+  const fullParams = {
+    ...params,
+    ...presetExtras,
+    sunoScrub: sunoScrubToggle.checked
+  };
   const res = await window.api.processAudio({ inputPath, outputPath, params: fullParams });
 
   setBusy(false);
