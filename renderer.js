@@ -71,6 +71,33 @@ function applyParamsToUI() {
   }
 }
 
+let animFrame = null;
+function animateToPreset(presetName) {
+  const targets = { ...PRESETS[presetName] };
+  params = { ...targets };
+  const starts = {};
+  for (const key of Object.keys(SLIDERS)) {
+    starts[key] = parseFloat(SLIDERS[key].el.value);
+  }
+  const DUR = 260;
+  const t0 = performance.now();
+  if (animFrame) cancelAnimationFrame(animFrame);
+  function step(t) {
+    const p = Math.min(1, (t - t0) / DUR);
+    const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    for (const [key, target] of Object.entries(targets)) {
+      const v = starts[key] + (target - starts[key]) * e;
+      const rounded = Math.round(v);
+      SLIDERS[key].el.value = String(rounded);
+      SLIDERS[key].val.textContent = SLIDERS[key].fmt(rounded);
+      updateSliderFill(key);
+    }
+    if (p < 1) animFrame = requestAnimationFrame(step);
+    else animFrame = null;
+  }
+  animFrame = requestAnimationFrame(step);
+}
+
 function setActivePreset(name) {
   for (const btn of presetRow.querySelectorAll('.seg')) {
     btn.classList.toggle('active', btn.dataset.preset === name);
@@ -99,6 +126,7 @@ function setSourceState(state, filePath) {
 }
 
 function setBusy(busy) {
+  document.body.classList.toggle('busy', busy);
   browseBtn.disabled = busy;
   urlBtn.disabled = busy;
   urlInput.disabled = busy;
@@ -151,8 +179,7 @@ window.api.window.onMaximized((isMax) => {
 presetRow.addEventListener('click', (e) => {
   const btn = e.target.closest('.seg');
   if (!btn) return;
-  params = { ...PRESETS[btn.dataset.preset] };
-  applyParamsToUI();
+  animateToPreset(btn.dataset.preset);
   setActivePreset(btn.dataset.preset);
 });
 
@@ -221,11 +248,12 @@ urlBtn.addEventListener('click', async () => {
   hideError();
   setBusy(true);
   showStatus('Descargando de YouTube...');
-  urlProgress.style.width = '0%';
+  urlProgress.classList.add('indeterminate');
 
   const res = await window.api.downloadUrl(url);
 
   setBusy(false);
+  urlProgress.classList.remove('indeterminate');
   urlProgress.style.width = '0%';
   if (res.ok) {
     setSourceState('has-file', res.filePath);
@@ -240,12 +268,14 @@ urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') urlBtn.click();
 });
 
-// Progress events
+// Progress events — switch off indeterminate as soon as real progress arrives
 window.api.onDownloadProgress((percent) => {
+  urlProgress.classList.remove('indeterminate');
   urlProgress.style.width = `${percent}%`;
 });
 
 window.api.onProgress((percent) => {
+  ctaProgress.classList.remove('indeterminate');
   ctaProgress.style.width = `${percent}%`;
 });
 
@@ -265,12 +295,15 @@ processBtn.addEventListener('click', async () => {
   hideError();
   setBusy(true);
   showStatus('Procesando...');
-  ctaProgress.style.width = '0%';
+  processBtn.classList.add('processing');
+  ctaProgress.classList.add('indeterminate');
   ctaLabel.textContent = 'PROCESANDO...';
 
   const res = await window.api.processAudio({ inputPath, outputPath, params });
 
   setBusy(false);
+  processBtn.classList.remove('processing');
+  ctaProgress.classList.remove('indeterminate');
   ctaLabel.textContent = 'PROCESAR Y EXPORTAR';
   ctaProgress.style.width = '0%';
 

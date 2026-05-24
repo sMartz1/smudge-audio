@@ -89,6 +89,11 @@ button, input, select {
   background: var(--accent);
   box-shadow: 0 0 6px rgba(232,163,61,0.6);
   filter: blur(0.4px);
+  transition: box-shadow 0.3s, filter 0.3s, transform 0.3s;
+}
+
+body.busy .brand-dot {
+  animation: dot-pulse 1.6s ease-in-out infinite;
 }
 
 .brand-word {
@@ -165,6 +170,10 @@ main {
   text-transform: uppercase;
 }
 
+.custom-badge:not(.hidden) {
+  animation: fade-in 0.18s ease-out;
+}
+
 .hidden { display: none !important; }
 
 /* ============ DROP ZONE ============ */
@@ -173,7 +182,7 @@ main {
   background: var(--surface);
   border: 1.5px dashed var(--border);
   border-radius: var(--r-lg);
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.18s, border-color 0.18s, border-style 0s 0.18s;
 }
 
 .drop-zone.idle .drop-chip,
@@ -221,6 +230,14 @@ main {
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
+}
+
+.drop-zone.has-file .drop-chip {
+  animation: fade-in-up 0.22s ease-out;
+}
+
+.drop-zone.has-file .chip-dot {
+  animation: dot-pop 0.3s ease-out 0.05s backwards;
 }
 
 .chip-dot {
@@ -308,8 +325,23 @@ main {
   height: 2px;
   background: var(--accent);
   width: 0%;
-  transition: width 0.15s linear;
+  transition: width 0.15s linear, opacity 0.2s;
   border-radius: 1px;
+  overflow: hidden;
+}
+
+.url-progress.indeterminate {
+  width: 100% !important;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 30%,
+    var(--accent) 50%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: slide-indeterminate 1.2s ease-in-out infinite;
 }
 
 .btn-secondary {
@@ -535,6 +567,35 @@ input[type="range"]:focus::-webkit-slider-thumb {
   transition: width 0.15s linear;
 }
 
+.cta-progress.indeterminate {
+  width: 100% !important;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 30%,
+    rgba(14,15,17,0.55) 50%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: slide-indeterminate 1.2s ease-in-out infinite;
+}
+
+.cta.processing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255,255,255,0.18) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+  pointer-events: none;
+}
+
 /* ============ STATUS / ERROR PANELS ============ */
 
 .status-panel {
@@ -547,6 +608,11 @@ input[type="range"]:focus::-webkit-slider-thumb {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
+}
+
+.status-panel:not(.hidden),
+.error-panel:not(.hidden) {
+  animation: fade-in-up 0.22s ease-out;
 }
 
 .status-panel::before {
@@ -618,4 +684,43 @@ input[type="range"]:focus::-webkit-slider-thumb {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+
+@keyframes dot-pulse {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(232,163,61,0.6);
+    filter: blur(0.4px);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(232,163,61,0.95), 0 0 4px rgba(232,163,61,0.6);
+    filter: blur(1.2px);
+    transform: scale(1.18);
+  }
+}
+
+@keyframes dot-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-indeterminate {
+  0% { background-position: 200% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -100% 0; }
 }
